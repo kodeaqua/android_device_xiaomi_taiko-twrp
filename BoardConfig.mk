@@ -173,15 +173,29 @@ TW_SCREEN_BLANK_ON_BOOT := true
 TW_NO_SCREEN_BLANK := true
 TW_USE_TOOLBOX := true
 TW_HAS_MTP := true
-# NOTE: brightness/thermal sysfs paths below are carried over from the
-# mt6789 rock (POCO M5) tree and are NOT yet verified against real taiko
-# (Redmi Pad 2) hardware. taiko's kernel does load leds-mtk-disp.ko /
-# pwm-mtk-disp.ko like rock, so the LED-class backlight node likely still
-# applies, but the brightness scale and the thermal_zone index need to be
-# confirmed on-device and adjusted if wrong.
+# NOTE: TW_BRIGHTNESS_PATH below is carried over from the mt6789 rock
+# (POCO M5) tree and is NOT verified against real taiko (Redmi Pad 2)
+# hardware, but that's safe: TWRP falls back to auto-discovery under
+# /sys/class/backlight then /sys/class/leds/lcd-backlight if this path
+# doesn't exist (data.cpp, DataManager::SetDefaultValues), so a wrong
+# guess here just costs a Find_File() scan, not a broken boot.
+#
+# TW_MAX_BRIGHTNESS/TW_DEFAULT_BRIGHTNESS were previously hardcoded to
+# rock's values (2020/1200) with no way to know if they applied to
+# taiko's backlight scale. Per bootable/recovery/data.cpp, defining
+# TW_MAX_BRIGHTNESS disables TWRP's own runtime auto-detection of the
+# real max_brightness (it reads the sibling max_brightness sysfs file
+# next to the brightness node, falling back to 255 only if that read
+# fails) and there is no bounds check anywhere on the write path
+# (twrp-functions.cpp Set_Brightness/write_to_file is a raw fwrite with
+# no clamp) - so a wrong hardcoded max/default here can leave the
+# backlight stuck at whatever the kernel driver does with an
+# out-of-range write, with no error surfaced to the user (this is the
+# most likely cause of a "just black screen" first boot on real
+# hardware: TW_SCREEN_BLANK_ON_BOOT+TW_NO_SCREEN_BLANK below blank then
+# restore the backlight via this exact path at boot). Left undefined so
+# TWRP determines the real scale and boots at full brightness.
 TW_BRIGHTNESS_PATH := "/sys/class/leds/lcd-backlight/brightness"
-TW_MAX_BRIGHTNESS := 2020
-TW_DEFAULT_BRIGHTNESS := 1200
 TW_INPUT_BLACKLIST := "hbtp_vm"
 TW_CUSTOM_CPU_TEMP_PATH := "/sys/class/thermal/thermal_zone28/temp"
 TW_FRAMERATE := 60
