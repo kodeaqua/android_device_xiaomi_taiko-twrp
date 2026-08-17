@@ -216,14 +216,27 @@ VENDOR_SECURITY_PATCH := 2099-12-31
 
 # TWRP Configuration
 TW_THEME := portrait_hdpi
-# TW_ROTATION defaults to 0 (raw panel scanout, no correction) unless set
-# here (bootable/recovery/minuitwrp/libminuitwrp_defaults.go) - confirmed
-# on real hardware the raw scanout displays as upside-down/REVERSE_PORTRAIT.
-# 180 flips it back to upright portrait, matching TW_THEME above; a
-# landscape rotation (90/270) was considered but rejected since it would
-# also need a landscape TW_THEME variant and the correct direction (90 vs
-# 270) isn't verifiable without hardware in hand.
-TW_ROTATION := 180
+# TW_ROTATION was tried at 180 to fix an initially-reported upside-down
+# display, but bootable/recovery's touch input handling (minuitwrp/
+# events.cpp) never applies gr_rotation to touch coordinates - only
+# minuitwrp/graphics.cpp's *drawing* respects it (confirmed: grep for
+# gr_rotation only matches graphics.cpp, nothing in events.cpp/gui.cpp).
+# There ARE RECOVERY_TOUCHSCREEN_FLIP_X/FLIP_Y/SWAP_XY macros in
+# events.cpp for exactly this kind of mismatch, but nothing in
+# bootable/recovery/Android.mk wires a BoardConfig variable to them, so
+# they cannot be enabled from device-tree config alone (fixing that
+# would require editing bootable/recovery, out of scope for this tree).
+#
+# With TW_ROTATION=180 live on real hardware, touch was inverted
+# top/bottom relative to what was drawn (tapping the top of the screen
+# triggered whatever was drawn at the bottom) - exactly the signature of
+# the display being rotated 180 while touch stays in the raw/untouched
+# coordinate space. That's strong indirect evidence the raw (rotation=0)
+# orientation was already correct and this 180 setting was actively
+# wrong, not a fix. Left unset (defaults to 0) so touch and display stay
+# in the same, consistent coordinate space; needs to be re-tested on
+# real hardware to confirm the resulting orientation is upright.
+
 TARGET_RECOVERY_PIXEL_FORMAT := "RGBX_8888"
 RECOVERY_SDCARD_ON_DATA := true
 TW_SCREEN_BLANK_ON_BOOT := true
