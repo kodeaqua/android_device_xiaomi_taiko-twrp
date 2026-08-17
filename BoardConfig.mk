@@ -216,26 +216,32 @@ VENDOR_SECURITY_PATCH := 2099-12-31
 
 # TWRP Configuration
 TW_THEME := portrait_hdpi
-# TW_ROTATION was tried at 180 to fix an initially-reported upside-down
-# display, but bootable/recovery's touch input handling (minuitwrp/
+# TW_ROTATION=180. bootable/recovery's touch handling (minuitwrp/
 # events.cpp) never applies gr_rotation to touch coordinates - only
-# minuitwrp/graphics.cpp's *drawing* respects it (confirmed: grep for
-# gr_rotation only matches graphics.cpp, nothing in events.cpp/gui.cpp).
-# There ARE RECOVERY_TOUCHSCREEN_FLIP_X/FLIP_Y/SWAP_XY macros in
-# events.cpp for exactly this kind of mismatch, but nothing in
-# bootable/recovery/Android.mk wires a BoardConfig variable to them, so
-# they cannot be enabled from device-tree config alone (fixing that
-# would require editing bootable/recovery, out of scope for this tree).
+# minuitwrp/graphics.cpp's *drawing* respects it (grep for gr_rotation
+# only matches graphics.cpp) - so this only ever corrects the display,
+# never touch. That's fine here: raw touch was verified normal/
+# unswapped on real hardware (`adb shell getevent -lt`: tapping the
+# physical top-left corner reports low ABS_MT_POSITION_X/Y, physical
+# bottom-right reports high values - standard orientation, no invert or
+# swap needed).
 #
-# With TW_ROTATION=180 live on real hardware, touch was inverted
-# top/bottom relative to what was drawn (tapping the top of the screen
-# triggered whatever was drawn at the bottom) - exactly the signature of
-# the display being rotated 180 while touch stays in the raw/untouched
-# coordinate space. That's strong indirect evidence the raw (rotation=0)
-# orientation was already correct and this 180 setting was actively
-# wrong, not a fix. Left unset (defaults to 0) so touch and display stay
-# in the same, consistent coordinate space; needs to be re-tested on
-# real hardware to confirm the resulting orientation is upright.
+# The panel's native scanout (TW_ROTATION=0) is rotated 180 from the
+# portrait_hdpi theme's actual button layout - confirmed by tapping the
+# button visually labeled "Install" (which appeared at the bottom-right
+# instead of its normal top-left position) and having it open the
+# Reboot page instead: since touch is normal/unrotated, tapping the
+# physical bottom-right hits the *un-rotated* buffer position, i.e.
+# whatever the theme actually draws at buffer bottom-right (Reboot),
+# not whatever visually appears there on the native-rotated panel. 180
+# corrects the *drawing* to match the theme's real layout; since touch
+# was already normal to begin with, both then line up.
+#
+# (Earlier real-hardware feedback with 180 active reported it as still
+# mismatched, but that check wasn't done with a precise visual-anchor
+# test like the Install/Reboot one above - reapplying now that the
+# mechanism is confirmed end-to-end; needs a real re-test to be sure.)
+TW_ROTATION := 180
 
 TARGET_RECOVERY_PIXEL_FORMAT := "RGBX_8888"
 RECOVERY_SDCARD_ON_DATA := true
