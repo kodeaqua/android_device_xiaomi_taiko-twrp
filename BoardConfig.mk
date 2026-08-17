@@ -254,6 +254,17 @@ TW_HAS_MTP := true
 # TWRP determines the real scale and boots at full brightness.
 TW_BRIGHTNESS_PATH := "/sys/class/leds/lcd-backlight/brightness"
 TW_INPUT_BLACKLIST := "hbtp_vm"
+# The touchscreen (Novatek nt36xxx_spi) and its Xiaomi touch-feature base
+# driver are NOT in the 210 modules pulled from vendor_boot's generic
+# ramdisk fragment (recovery/root/lib/modules) - real hardware boot dmesg
+# ("Modules linked in:") shows both nt36xxx_spi(O) and xiaomi(O) loaded,
+# but neither .ko ships in the ramdisk, meaning MIUI lazy-loads them from
+# /vendor/lib/modules on the real (mounted) vendor partition instead.
+# TW_LOAD_VENDOR_MODULES enables TWRP's own KernelModuleLoader
+# (bootable/recovery/kernel_module_loader.cpp, already gated on this exact
+# BoardConfig variable - no bootable/recovery changes needed) to mount
+# /vendor and load these two by name during Setup_Fstab.
+TW_LOAD_VENDOR_MODULES := "nt36xxx_spi.ko xiaomi.ko"
 TW_CUSTOM_CPU_TEMP_PATH := "/sys/class/thermal/thermal_zone28/temp"
 TW_FRAMERATE := 60
 TW_STATUS_ICONS_ALIGN := center
