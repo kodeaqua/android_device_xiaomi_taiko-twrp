@@ -160,8 +160,20 @@ BOARD_HAS_NO_SELECT_BUTTON := true
 BOARD_USES_GENERIC_KERNEL_IMAGE := true
 BOARD_SUPPRESS_SECURE_ERASE := true
 BOARD_EXCLUDE_KERNEL_FROM_RECOVERY_IMAGE :=
+# Both flags together (per build/make/core/Makefile:1087-1094) make the
+# build emit vendor_boot with TWO vendor ramdisk fragments, matching the
+# taiko retail vendor_boot.img exactly: a generic fragment (ramdisk_type
+# 1, no name) plus a separately-typed "recovery" fragment (ramdisk_type
+# 2/RECOVERY, name "recovery") holding TWRP's recovery root. Building
+# with only BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT (as inherited
+# from rock) instead produces a single generic-only fragment; on real
+# taiko hardware that single-fragment image boots fine to the ROM
+# (normal boot ignores fragment typing) but the bootloader crashes
+# (MTK AEE LK_CRASH, confirmed via /data/vendor/aee_exp/db.fatal.*.KE)
+# specifically when asked to enter recovery mode, since it expects to
+# find the typed "recovery" fragment that was missing.
 BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT := true
-#BOARD_INCLUDE_RECOVERY_RAMDISK_IN_VENDOR_BOOT := true
+BOARD_INCLUDE_RECOVERY_RAMDISK_IN_VENDOR_BOOT := true
 TARGET_RECOVERY_FSTAB := $(DEVICE_PATH)/recovery/root/system/etc/recovery.fstab
 
 # Crypto
