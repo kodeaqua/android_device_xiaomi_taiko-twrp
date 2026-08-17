@@ -109,11 +109,16 @@ BOARD_VENDOR_BOOTIMAGE_PARTITION_SIZE := 67108864
 # Values verified from the retail super.img (liblp metadata): total super
 # size 0x2c0000000, "main" partition group max size 0x2bfa00000, dynamic
 # partitions system/system_ext/product/vendor/vendor_dlkm/odm_dlkm/
-# system_dlkm/mi_ext.
+# system_dlkm/mi_ext. system_dlkm and mi_ext are real on-device dynamic
+# partitions (see recovery.fstab) but this AOSP branch's
+# BOARD_MAIN_DYNAMIC_PARTITIONS_PARTITION_LIST whitelist (build/make/core/
+# config.mk) only accepts system/vendor/product/system_ext/odm/vendor_dlkm/
+# odm_dlkm, so they are left out of the build-time list; TWRP still mounts
+# them at runtime via recovery.fstab.
 BOARD_SUPER_PARTITION_SIZE := 0x2c0000000
 BOARD_SUPER_PARTITION_GROUPS := main_dynamic_partitions
 BOARD_MAIN_DYNAMIC_PARTITIONS_SIZE := 0x2bfa00000
-BOARD_MAIN_DYNAMIC_PARTITIONS_PARTITION_LIST := system vendor product system_ext odm_dlkm vendor_dlkm system_dlkm mi_ext
+BOARD_MAIN_DYNAMIC_PARTITIONS_PARTITION_LIST := system vendor product system_ext odm_dlkm vendor_dlkm
 
 TARGET_COPY_OUT_ODM := odm
 TARGET_COPY_OUT_PRODUCT := product
