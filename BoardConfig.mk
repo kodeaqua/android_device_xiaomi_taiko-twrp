@@ -61,7 +61,19 @@ TARGET_KERNEL_HEADER_ARCH := arm64
 
 TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb
 TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/kernel
-BOARD_VENDOR_CMDLINE := bootopt=64S3,32N2,64N2
+# BOARD_KERNEL_CMDLINE/BOARD_BOOTCONFIG (not a manual --vendor_cmdline
+# BOARD_MKBOOTIMG_ARGS override, see below) match the taiko retail
+# vendor_boot.img exactly: the stock vendor_cmdline is literally
+# "bootopt=64S3,32N2,64N2 bootconfig", with the trailing "bootconfig"
+# token telling the kernel to parse an appended bootconfig trailer
+# containing the 3 kernel.* lines below (verified via unpack_bootimg.py
+# against the retail image). build/make/core/board_config.mk only
+# appends "bootconfig" to the vendor cmdline and generates the trailer
+# when BOARD_BOOTCONFIG is actually set, so both must be defined
+# together for the image to match what this stock, unmodified kernel
+# was actually shipped and tested with.
+BOARD_KERNEL_CMDLINE := bootopt=64S3,32N2,64N2
+BOARD_BOOTCONFIG := kernel.rcu_nocbs=all kernel.rcutree.enable_rcu_lazy=1 kernel.rcupdate.rcu_cpu_stall_cputime=1
 # Base/offsets below were cross-checked against the taiko retail
 # vendor_boot.img header (unpack_bootimg) and match rock's values exactly,
 # since both are mt6789-family boards: kernel_offset=0x40000000,
@@ -78,7 +90,6 @@ BOARD_DTB_OFFSET := 0x07c88000
 BOARD_FLASH_BLOCK_SIZE := 262144
 
 BOARD_MKBOOTIMG_ARGS += --dtb $(TARGET_PREBUILT_DTB)
-BOARD_MKBOOTIMG_ARGS += --vendor_cmdline $(BOARD_VENDOR_CMDLINE)
 BOARD_MKBOOTIMG_ARGS += --pagesize $(BOARD_PAGE_SIZE) --board ""
 BOARD_MKBOOTIMG_ARGS += --kernel_offset $(BOARD_KERNEL_OFFSET)
 BOARD_MKBOOTIMG_ARGS += --ramdisk_offset $(BOARD_RAMDISK_OFFSET)
