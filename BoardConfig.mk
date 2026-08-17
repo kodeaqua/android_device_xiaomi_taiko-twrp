@@ -14,7 +14,7 @@
 # limitations under the License.
 #
 
-DEVICE_PATH := device/xiaomi/rock
+DEVICE_PATH := device/xiaomi/taiko
 
 # For building with minimal manifest
 ALLOW_MISSING_DEPENDENCIES := true
@@ -42,10 +42,10 @@ ENABLE_CPUSETS := true
 ENABLE_SCHEDBOOST := true
 
 # Assertation
-TARGET_OTA_ASSERT_DEVICE := rock
+TARGET_OTA_ASSERT_DEVICE := taiko
 
 # Bootloader
-TARGET_BOOTLOADER_BOARD_NAME := rock
+TARGET_BOOTLOADER_BOARD_NAME := taiko
 TARGET_NO_BOOTLOADER := true
 TARGET_USES_UEFI := true
 
@@ -62,6 +62,10 @@ TARGET_KERNEL_HEADER_ARCH := arm64
 TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb
 TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/kernel
 BOARD_VENDOR_CMDLINE := bootopt=64S3,32N2,64N2
+# Base/offsets below were cross-checked against the taiko retail
+# vendor_boot.img header (unpack_bootimg) and match rock's values exactly,
+# since both are mt6789-family boards: kernel_offset=0x40000000,
+# ramdisk_offset=0x66f00000, tags_offset=dtb_offset=0x47c80000.
 BOARD_KERNEL_BASE := 0x3fff8000
 BOARD_PAGE_SIZE := 4096
 BOARD_KERNEL_OFFSET := 0x00008000
@@ -69,7 +73,7 @@ BOARD_RAMDISK_OFFSET := 0x26f08000
 BOARD_TAGS_OFFSET := 0x07c88000
 BOARD_BOOT_HEADER_VERSION := 4
 BOARD_HEADER_SIZE := 2128
-BOARD_DTB_SIZE := 197217
+BOARD_DTB_SIZE := 191057
 BOARD_DTB_OFFSET := 0x07c88000
 BOARD_FLASH_BLOCK_SIZE := 262144
 
@@ -102,20 +106,26 @@ BOARD_VENDOR_BOOTIMAGE_PARTITION_SIZE := 67108864
 #BOARD_RECOVERYIMAGE_PARTITION_SIZE := 67108864
 
 # Dynamic Partition
-BOARD_SUPER_PARTITION_SIZE := 0x220000000
+# Values verified from the retail super.img (liblp metadata): total super
+# size 0x2c0000000, "main" partition group max size 0x2bfa00000, dynamic
+# partitions system/system_ext/product/vendor/vendor_dlkm/odm_dlkm/
+# system_dlkm/mi_ext.
+BOARD_SUPER_PARTITION_SIZE := 0x2c0000000
 BOARD_SUPER_PARTITION_GROUPS := main_dynamic_partitions
-BOARD_MAIN_DYNAMIC_PARTITIONS_SIZE := 0x220000000
-BOARD_MAIN_DYNAMIC_PARTITIONS_PARTITION_LIST := system vendor product 
+BOARD_MAIN_DYNAMIC_PARTITIONS_SIZE := 0x2bfa00000
+BOARD_MAIN_DYNAMIC_PARTITIONS_PARTITION_LIST := system vendor product system_ext odm_dlkm vendor_dlkm system_dlkm mi_ext
 
 TARGET_COPY_OUT_ODM := odm
 TARGET_COPY_OUT_PRODUCT := product
 TARGET_COPY_OUT_SYSTEM := system
 TARGET_COPY_OUT_VENDOR := vendor
 
-BOARD_PRODUCTIMAGE_FILE_SYSTEM_TYPE := ext4
-BOARD_SYSTEMIMAGE_FILE_SYSTEM_TYPE := ext4
-BOARD_VENDORIMAGE_FILE_SYSTEM_TYPE := ext4
-BOARD_ODMIMAGE_FILE_SYSTEM_TYPE := ext4
+# Stock ships system/system_ext/vendor/product as EROFS (verified from the
+# vendor_a superblock), ext4 kept as a fallback build type.
+BOARD_PRODUCTIMAGE_FILE_SYSTEM_TYPE := erofs
+BOARD_SYSTEMIMAGE_FILE_SYSTEM_TYPE := erofs
+BOARD_VENDORIMAGE_FILE_SYSTEM_TYPE := erofs
+BOARD_ODMIMAGE_FILE_SYSTEM_TYPE := erofs
 BOARD_USERDATAIMAGE_FILE_SYSTEM_TYPE := f2fs
 BOARD_ROOT_EXTRA_FOLDERS += cust
 TARGET_USERIMAGES_USE_EXT4 := true
@@ -158,6 +168,12 @@ TW_SCREEN_BLANK_ON_BOOT := true
 TW_NO_SCREEN_BLANK := true
 TW_USE_TOOLBOX := true
 TW_HAS_MTP := true
+# NOTE: brightness/thermal sysfs paths below are carried over from the
+# mt6789 rock (POCO M5) tree and are NOT yet verified against real taiko
+# (Redmi Pad 2) hardware. taiko's kernel does load leds-mtk-disp.ko /
+# pwm-mtk-disp.ko like rock, so the LED-class backlight node likely still
+# applies, but the brightness scale and the thermal_zone index need to be
+# confirmed on-device and adjusted if wrong.
 TW_BRIGHTNESS_PATH := "/sys/class/leds/lcd-backlight/brightness"
 TW_MAX_BRIGHTNESS := 2020
 TW_DEFAULT_BRIGHTNESS := 1200

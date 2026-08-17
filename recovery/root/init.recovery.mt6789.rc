@@ -1,5 +1,3 @@
-import /init.microtrust.rc
-
 on init
     # Create a more standard /dev/block layout for our scripts
     symlink /dev/block/platform/bootdevice /dev/block/bootdevice
@@ -10,7 +8,7 @@ on init
     setprop sys.usb.controller "musb-hdrc"
     setprop sys.usb.ffs.aio_compat 1
     setprop crypto.ready 1
-    
+
 on fs
     install_keyring
 
@@ -31,7 +29,7 @@ on post-fs
     symlink /dev/block/platform/bootdevice/by-name/preloader_b /dev/block/platform/bootdevice/by-name/preloader_emmc_b
     symlink /dev/block/platform/bootdevice/by-name/preloader_a /dev/block/platform/bootdevice/by-name/preloader_ufs_a
     symlink /dev/block/platform/bootdevice/by-name/preloader_b /dev/block/platform/bootdevice/by-name/preloader_ufs_b
-    
+
 on boot
     chown system system /dev/xiaomi-touch
     chmod 0664 /dev/xiaomi-touch
@@ -44,8 +42,8 @@ service touchfeature-hal-1-0 /vendor/bin/hw/vendor.xiaomi.hardware.touchfeature@
     group root
     onrestart restart touchfeature-hal-1-0
     seclabel u:r:recovery:s0
-    
-    
+
+
 service mtk.plpath.utils.link /system/bin/mtk_plpath_utils
     class main
     user root
@@ -54,50 +52,39 @@ service mtk.plpath.utils.link /system/bin/mtk_plpath_utils
     oneshot
     seclabel u:r:recovery:s0
 
-service keymint-beanpod /vendor/bin/hw/android.hardware.security.keymint@1.0-service.beanpod
-    interface android.hardware.keymaster@4.0::IKeymasterDevice default
-    interface android.hardware.keymaster@4.1::IKeymasterDevice default
-    user root
-    group root drmrpc
-    disabled
-    oneshot
-    seclabel u:r:recovery:s0
-
+# NOTE: taiko does not use the Trustonic/"beanpod" TEE stack that rock
+# (POCO M5) ships (taiko's kernel loads mitee.ko, Xiaomi's own in-house TEE,
+# instead of the microtrust/teei stack). The teei_daemon service and the
+# beanpod-branded hardware-backed keymint/gatekeeper HAL were therefore
+# dropped rather than carried over unverified; only the generic AOSP
+# software gatekeeper (gatekeeper-1-0) is kept below. FBE password
+# decryption in recovery is consequently NOT verified to work yet on taiko
+# and needs a matching keymint/gatekeeper HAL sourced from a real device.
 service gatekeeper-1-0 /vendor/bin/hw/android.hardware.gatekeeper@1.0-service
     interface android.hardware.gatekeeper@1.0::IGatekeeper default
     user root
     group root
     disabled
     seclabel u:r:recovery:s0
-    
-    
+
+
 on property:hwservicemanager.ready=true
-    start teei_daemon
     start gatekeeper-1-0
-    start keymint-beanpod
     start keymaster
-    
-    
+
+
 on property:vendor.sys.listener.registered=true
-    start teei_daemon
     start gatekeeper-1-0
-    start keymint-beanpod
     start keymaster
-   
+
 on property:ro.crypto.state=unsupported
-    stop teei_daemon
-    stop keymint-beanpod
     stop gatekeeper-1-0
     stop keymaster-4-1
 on property:ro.crypto.state=unencrypted
-    stop teei_daemon
-    stop keymint-beanpod
     stop gatekeeper-1-0
     stop keymaster
-    
+
 on property:twrp.all.users.decrypted=true
-    stop teei_daemon
-    stop keymint-beanpod
     stop gatekeeper-1-0
     stop keymaster
 on boot
