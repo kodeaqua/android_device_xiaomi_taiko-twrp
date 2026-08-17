@@ -177,9 +177,35 @@ BOARD_INCLUDE_RECOVERY_RAMDISK_IN_VENDOR_BOOT := true
 TARGET_RECOVERY_FSTAB := $(DEVICE_PATH)/recovery/root/system/etc/recovery.fstab
 
 # Crypto
-TW_INCLUDE_CRYPTO := true
-TW_INCLUDE_CRYPTO_FBE := true
-TW_INCLUDE_FBE_METADATA_DECRYPT := true
+# TW_INCLUDE_CRYPTO is disabled entirely (not just FBE metadata decrypt):
+# bootable/recovery/Android.mk unconditionally adds
+# -DTW_INCLUDE_FBE_METADATA_DECRYPT whenever TW_INCLUDE_CRYPTO is true
+# (it is not gated by our own BoardConfig var of the same name), so
+# there is no way to keep basic crypto UI while dropping just the
+# metadata-decrypt call from device-tree config alone - and patching
+# bootable/recovery (a separate upstream repo, not part of this device
+# tree) is out of scope here.
+#
+# That compiled-in call - android::vold::fscrypt_mount_metadata_encrypted()
+# in system/vold/MetadataCrypt.cpp - unwraps the FBE metadata key
+# through the real KeyMint/Keystore2 HAL. taiko has no matching HAL
+# bundled (see README - rock's Trustonic "beanpod" stack was dropped
+# since taiko uses Xiaomi's own mitee TEE instead), so it hangs
+# indefinitely waiting for a service that never registers. Confirmed
+# live on real hardware: `adb shell ps -A` showed the recovery process
+# asleep on futex_wait_queue immediately after the "Using additional
+# fstab for decryption" log line (printed right before this call,
+# partitionmanager.cpp:597-599) - the whole GUI was stuck at the splash
+# screen since this runs on TWRP's main thread.
+#
+# TW_INCLUDE_CRYPTO := false avoids the hang and lets TWRP boot to the
+# main UI, at the cost of losing all decrypt UI/gatekeeper support for
+# now (Decrypt_Data() in partitionmanager.cpp is itself #ifdef
+# TW_INCLUDE_CRYPTO, so with it off /data just shows as an encrypted,
+# unmountable partition instead of attempting - and hanging on - any
+# decrypt). Re-enable once a real taiko KeyMint/Gatekeeper HAL is
+# sourced from a rooted device.
+TW_INCLUDE_CRYPTO := false
 BOARD_USES_METADATA_PARTITION := true
 
 # Encryption
@@ -190,6 +216,14 @@ VENDOR_SECURITY_PATCH := 2099-12-31
 
 # TWRP Configuration
 TW_THEME := portrait_hdpi
+# TW_ROTATION defaults to 0 (raw panel scanout, no correction) unless set
+# here (bootable/recovery/minuitwrp/libminuitwrp_defaults.go) - confirmed
+# on real hardware the raw scanout displays as upside-down/REVERSE_PORTRAIT.
+# 180 flips it back to upright portrait, matching TW_THEME above; a
+# landscape rotation (90/270) was considered but rejected since it would
+# also need a landscape TW_THEME variant and the correct direction (90 vs
+# 270) isn't verifiable without hardware in hand.
+TW_ROTATION := 180
 TARGET_RECOVERY_PIXEL_FORMAT := "RGBX_8888"
 RECOVERY_SDCARD_ON_DATA := true
 TW_SCREEN_BLANK_ON_BOOT := true
