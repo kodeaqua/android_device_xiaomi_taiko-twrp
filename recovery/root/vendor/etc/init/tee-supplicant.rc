@@ -38,7 +38,10 @@ service vendor.gatekeeper_mitee /vendor/bin/hw/android.hardware.gatekeeper-servi
     seclabel u:r:recovery:s0
 
 
-on fs
+# This whole action deliberately fires on `post-fs`, not the more
+# conventional `fs`, because of the persist mount below - see its own
+# comment for why.
+on post-fs
     write /proc/bootprof "init tee-supplicant"
     # /mnt/vendor/persist is declared in recovery.fstab but that only
     # registers it with TWRP's own GUI mount manager - it's not mounted
@@ -50,6 +53,21 @@ on fs
     # STATUS_OK" / TEEC oresult=TEEC_ORIGIN_TRUSTED_APP on its first TEE
     # call that touches persistent storage). Mount it explicitly so the
     # restorecon/mkdir below - and the TA - see the real partition.
+    #
+    # This action originally ran on `fs` (the same trigger tee-supplicant/
+    # gatekeeper_mitee themselves still start from below - nothing else
+    # here needed to move). Even with the `wait` flag added, the mount
+    # never showed up in /proc/mounts - manually running the identical
+    # `mount -t ext4 ... /dev/block/by-name/persist /mnt/vendor/persist`
+    # over adb post-boot succeeds instantly, so the device node/symlink
+    # itself and the fs are fine, just not ready yet this early. Confirmed
+    # this device's own init.recovery.mt6789.rc already waits for block
+    # devices explicitly at `on post-fs` (`wait /dev/block/mmcblk0boot0
+    # 2` a few lines below its own `on post-fs`), so that trigger is
+    # already established as the right point in this device's boot
+    # sequence for by-name symlinks to be reliably present. Moved this
+    # whole action there (keeping `wait` too, as a harmless extra
+    # safety net) instead of guessing at a fixed extra delay.
     mount ext4 /dev/block/by-name/persist /mnt/vendor/persist wait noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc
    # set SELinux security contexts on upgrade or policy update
     restorecon_recursive /mnt/vendor/persist
