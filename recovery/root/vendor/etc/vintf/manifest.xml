@@ -111,7 +111,4 @@
         <name>vendor.xiaomi.hardware.vsimapp</name>
         <fqname>IVSIMService/default</fqname>
     </hal>
-    <sepolicy>
-        <version>202504</version>
-    </sepolicy>
 </manifest>
