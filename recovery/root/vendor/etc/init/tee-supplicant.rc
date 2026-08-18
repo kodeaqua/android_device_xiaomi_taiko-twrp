@@ -5,31 +5,37 @@ service tee-supplicant /vendor/bin/tee-supplicant
     group system secure_element nfc
     capabilities SYS_RAWIO
     disabled
+    seclabel u:r:recovery:s0
 
 # vendor.keymint-mitee and vendor.gatekeeper_mitee were originally each in
 # their own standalone .rc file (android.hardware.security.keymint.mitee@4.0-
 # service.rc / android.hardware.gatekeeper-service.mitee.rc, matching stock
 # firmware layout) but init never registered either service from those files
 # - getprop init.svc.vendor.keymint-mitee came back completely empty (not
-# even "stopped"), confirmed live on real hardware across several rounds of
-# fixes (removing an invalid "drmrpc" group, adding explicit `start`
-# commands) that ruled out every other explanation checked (service name
-# character validation, file permissions/SELinux context - both matched
-# tee-supplicant.rc's own working file exactly, content on-device verified
-# byte-identical to what was built). Root cause not conclusively identified;
-# merging both service definitions into this file - proven to parse
-# correctly since tee-supplicant.rc's own service/on-fs content clearly
-# works - sidesteps whatever was specific to those two standalone files.
+# even "stopped"). Root cause finally confirmed: none of the 3 services in
+# this file (including tee-supplicant itself, which turned out to have the
+# exact same empty-getprop symptom once actually re-tested) had an explicit
+# `seclabel` line, and there's no file_contexts entry for any of these
+# binaries either - unlike every other service in init.recovery.mt6789.rc
+# (touchfeature-hal-1-0, gatekeeper-1-0, mtk.plpath.utils.link), which all
+# explicitly set `seclabel u:r:recovery:s0` and all register fine. Without a
+# resolvable context, init silently drops the service instead of registering
+# it. Fixed by adding the same explicit seclabel here. (The earlier
+# standalone-vs-merged-file theory and the drmrpc group removal were both
+# real bugs in their own right, just not the actual cause of this specific
+# symptom - keeping the merge since it's already proven to parse.)
 service vendor.keymint-mitee /vendor/bin/hw/android.hardware.security.keymint@4.0-service.mitee
     class early_hal
     user system
     group system
     disabled
+    seclabel u:r:recovery:s0
 
 service vendor.gatekeeper_mitee /vendor/bin/hw/android.hardware.gatekeeper-service.mitee
     class hal
     user system
     group system
+    seclabel u:r:recovery:s0
 
 
 on fs
