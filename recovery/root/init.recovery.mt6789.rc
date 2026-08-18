@@ -25,6 +25,36 @@ on fs
 
 
 on post-fs
+    # Bring the touchscreen up as early as possible.
+    #
+    # The Novatek driver does not talk to the panel the moment it probes: it
+    # queues its firmware upload on a ~14s delayed work and the digitiser
+    # reports nothing at all until that lands. Measured on real hardware,
+    # nvt_ts_probe finished at 09:41:06.390 and firmware_request for
+    # novatek_ts_fw_boe.bin fired at 09:41:20.379 - 13.99s later, with the
+    # CPU idle throughout. That countdown starts when the module loads, so
+    # whatever delays the load delays touch by the same amount.
+    #
+    # Left to TW_LOAD_VENDOR_MODULES, the load happens at ~9.3s into boot,
+    # because nt36xxx_spi.ko and xiaomi.ko live on /vendor_dlkm - a logical
+    # partition TWRP can only reach after it has mapped and mounted the
+    # super partition. Both are committed to recovery/root/lib/modules
+    # instead (777KB together; the rest of what nt36xxx_spi depends on -
+    # panel-o84-3{5,6}-*, hqsysfs, mediatek_drm_v1, xiaomi_usb_touch_notifier,
+    # and miev for xiaomi.ko - is already among the factory fragment's 210
+    # modules, loaded by init well before this point) so they can be
+    # insmod'd here at ~6.5s, moving first touch response from ~23.3s to
+    # ~20.5s. xiaomi.ko goes first: nt36xxx_spi.ko lists it in its own
+    # `depends=`.
+    #
+    # TW_LOAD_VENDOR_MODULES stays enabled as a fallback - it will simply
+    # find both already loaded. The deferred firmware request still resolves
+    # against the copy bundled at /vendor/firmware in this ramdisk, since
+    # TWRP unmounts the real /vendor right after its own module pass, long
+    # before the ~20.5s mark.
+    insmod /lib/modules/xiaomi.ko
+    insmod /lib/modules/nt36xxx_spi.ko
+
    start boot-hal-1-2
     exec u:r:update_engine:s0 root root -- /system/bin/mtk_plpath_utils
     start mtk.plpath.utils.link
