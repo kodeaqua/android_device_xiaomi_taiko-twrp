@@ -6,6 +6,31 @@ service tee-supplicant /vendor/bin/tee-supplicant
     capabilities SYS_RAWIO
     disabled
 
+# vendor.keymint-mitee and vendor.gatekeeper_mitee were originally each in
+# their own standalone .rc file (android.hardware.security.keymint.mitee@4.0-
+# service.rc / android.hardware.gatekeeper-service.mitee.rc, matching stock
+# firmware layout) but init never registered either service from those files
+# - getprop init.svc.vendor.keymint-mitee came back completely empty (not
+# even "stopped"), confirmed live on real hardware across several rounds of
+# fixes (removing an invalid "drmrpc" group, adding explicit `start`
+# commands) that ruled out every other explanation checked (service name
+# character validation, file permissions/SELinux context - both matched
+# tee-supplicant.rc's own working file exactly, content on-device verified
+# byte-identical to what was built). Root cause not conclusively identified;
+# merging both service definitions into this file - proven to parse
+# correctly since tee-supplicant.rc's own service/on-fs content clearly
+# works - sidesteps whatever was specific to those two standalone files.
+service vendor.keymint-mitee /vendor/bin/hw/android.hardware.security.keymint@4.0-service.mitee
+    class early_hal
+    user system
+    group system
+    disabled
+
+service vendor.gatekeeper_mitee /vendor/bin/hw/android.hardware.gatekeeper-service.mitee
+    class hal
+    user system
+    group system
+
 
 on fs
     write /proc/bootprof "init tee-supplicant"
