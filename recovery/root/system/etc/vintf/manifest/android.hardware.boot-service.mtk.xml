@@ -1,0 +1,17 @@
+<!--
+    Same fix as android.hardware.health-service.example.xml in this same
+    directory: stock's platform fragment ships this file too, also
+    `<manifest version="9.0" type="device">` sitting in the framework
+    manifest scan dir - confirmed live as the SECOND (and, per the
+    original stock fragment listing, last) file poisoning every
+    getFrameworkHalManifest() call with the same "Unrecognized
+    manifest.version 9.0" parse error, after the health-service one was
+    fixed and this one turned out to be the very next line in the same
+    logcat capture. TWRP's own boot HAL (IBootControl) is already
+    started separately (`start boot-hal-1-2` in
+    init.recovery.mt6789.rc, confirmed running independent of this
+    file), so - same as the health override - this only needs to parse
+    successfully, not actually declare anything.
+-->
+<manifest version="1.0" type="framework">
+</manifest>

@@ -17,9 +17,10 @@ ROTATION — verified working on real hardware (TW_ROTATION := 180, see below) �
 DECRYPTION — real mitee KeyMint/Gatekeeper HAL, verified working end-to-end on real
   hardware for freshly-formatted /data (see caveats: pre-existing stock-encrypted
   /data is blocked by KeyMint anti-rollback protection, not fixable from recovery)
-NORMAL BOOT ("boot to System") — BROKEN by this tree's vendor_boot.img since the
-  switch to typed vendor ramdisk fragments; TWRP/recovery itself unaffected. See
-  "KNOWN ISSUE" section below before doing any more vendor_boot.img work.
+NORMAL BOOT ("boot to System") — verified working again on real hardware, same
+  as TWRP/recovery mode. See "vendor_boot.img: normal boot + TWRP splash-hang,
+  both resolved" section below - `tools/assemble_vendor_boot.sh` is now a
+  required extra step after `mka vendorbootimage`, not optional.
 
 ## What was re-derived from the real taiko firmware
 
@@ -216,13 +217,16 @@ NORMAL BOOT ("boot to System") — BROKEN by this tree's vendor_boot.img since t
   `vendor_boot.img`, `ramdisk_files-timestamp`, `recovery.cpio.lz4`, and the
   stale `.so` copies, then rebuild) resolves it.
 
-## KNOWN ISSUE — this tree's vendor_boot.img cannot boot to System
+## vendor_boot.img: normal boot + TWRP splash-hang, both resolved
 
-**Status: unsolved, do not attempt further live experiments without new
-information (real MTK bootloader/LK source or documentation).** TWRP/recovery
-mode itself is completely unaffected and works correctly with every commit on
-`main` - this only affects booting the *same* `vendor_boot.img` into normal
-Android (real ROM or GSI).
+**Status: fixed and verified live on real hardware - both normal Android
+boot and TWRP's own recovery GUI work from the same `vendor_boot.img`.**
+This took the rest of the night after the section below was first written;
+kept mostly intact underneath as the record of how the actual fix was
+found, since the mechanism it establishes (normal boot loads the vendor
+ramdisk's `type 0x1` fragment *alone*, recovery mode concatenates
+`type 0x1` + `type 0x2`) is still exactly right and is what the fix relies
+on - only the "unsolved" conclusion at the end was wrong.
 
 **Confirmed regression point** (found by bisecting saved builds in
 `C:\Users\Aqua\Documents`): `twrp-taiko-eng-20260817-2149-4c80fbe.img` boots
@@ -329,24 +333,90 @@ System boot is ever needed urgently):
    state** (`TW_INCLUDE_RESETPROP`/`LIBRESETPROP`/`REPACKTOOLS` restored,
    `TW_EXCLUDE_NANO`/`BASH` removed) - only this README changed.
 
-**Next steps for whoever picks this up**: the mechanism is now well
-understood (see above) and the remaining problem is purely "fit real
-first-stage content + this tree's recovery content in 64MB without breaking
-either boot mode" - which needs either (a) much more careful, one-at-a-time
-kernel-module dependency verification (ideally against real MTK/AOSP
-documentation on which of the 210 modules are genuinely first-stage-critical
-vs. loaded lazily later, not guessing from module *names*), or (b) shrinking
-this tree's own recovery content significantly first (it's grown ~15MB since
-the last time this worked, almost entirely from the mitee TA/crypto bundle -
-see the DECRYPTION section above), to leave more headroom for real generic
-content without needing to trim it as aggressively. Test recovery mode's
-splash screen specifically after *any* kernel-module change, not just normal
-boot - approach 5 above shows recovery can break in ways that have nothing
-to do with the normal-boot mechanism at all.
+**The actual fix, once a 6th approach was tried**: stop trying to fit
+*trimmed* real generic content in budget at all - use stock's real `type
+0x1` fragment **completely unmodified, byte-for-byte**, and only trim
+*this tree's own* `type 0x2` (recovery) fragment enough to fit both under
+64MB together. `vendor_boot_stock/vendor_ramdisk00.stock.lz4` in this
+directory is that exact blob (27.6MB compressed), extracted once from this
+device's own factory `vendor_boot.img` and committed here since no build
+config in this tree can regenerate stock's proprietary bootstrap content
+(real init variant, linkerconfig, sepolicy, prop.default, res/, etc. -
+confirmed via byte comparison that this tree's own best AOSP-13 build
+output, even with real kernel modules correctly added via
+`BOARD_VENDOR_RAMDISK_KERNEL_MODULES`, was still less than half the size
+of stock's and missing all of that). The only thing trimmed from `type
+0x2` is `lib/modules/*.ko` - safe to drop entirely since stock's `type
+0x1` already ships the identical 210 files (this tree's own copies were
+extracted from the same firmware originally) and recovery mode
+concatenates both fragments anyway, so keeping two copies was pure waste
+against the budget. Final size: 62.9MB, comfortable margin under 64MB.
+`tools/assemble_vendor_boot.sh` does this whole splice automatically after
+`mka vendorbootimage` - see that script for the fully-commented mechanics.
+
+That fix alone got normal boot working immediately, but flashing it
+revealed a second, separate problem: TWRP's own recovery GUI now hung at
+the splash screen forever (kernel/init boot fine, `adb` stays reachable
+throughout - a completely different failure mode from the earlier
+panics). Chased through three wrong turns before finding the real cause:
+
+1. *First theory*: `/mnt/vendor/persist`'s mount timing race (the same
+   one `tee-supplicant.rc`'s `mount_persist_delayed` was already built to
+   dodge) had shifted later because `hwservicemanager.ready` itself now
+   fires later with all of stock's extra platform content to bring up
+   first, letting TWRP's own early partition scan-then-unmount win the
+   race instead of losing it. Made the delayed mount retry periodically
+   instead of once - **wrong**: manually mounting persist live over adb
+   mid-crash-loop proved it made no difference at all to the actual
+   crash.
+2. *Second theory*: `tee-supplicant`/`vendor.keymint-mitee`/
+   `vendor.gatekeeper_mitee` all ran `user system`, but persist's real
+   factory content includes an `otrp` dir that's `drwx------ root
+   system` (0700, owner-only - the matching `system` group grants
+   nothing). Changed all three to `user root` - this genuinely helped
+   (keymint-mitee got much further: connected to the TEE, registered the
+   HAL, answered device-info queries) but a **new** crash appeared right
+   after, in `getHardwareInfo()`.
+3. *Actual cause*: that new crash was always `keystore2: Check failed:
+   serviceManager.get() Failed to get ServiceManager`, and logcat showed
+   why - stock's `type 0x1` fragment ships exactly two files under
+   `/system/etc/vintf/manifest/` (`android.hardware.health-
+   service.example.xml`, `android.hardware.boot-service.mtk.xml`), both
+   declaring `<manifest version="9.0" type="device">`. This tree's
+   AOSP-13 `libvintf` (`@4.0`) can't parse manifest version 9.0, *and*
+   `/system/etc/vintf/manifest/` is scanned as the **framework** manifest
+   set regardless of a file's own `type` attribute - so every single
+   `getFrameworkHalManifest()` call anywhere in the system failed with
+   `-22`, forever, because one bad fragment poisons the whole directory's
+   parse. `recovery/root/system/etc/vintf/manifest/` now ships harmless
+   zero-HAL replacements (`<manifest version="1.0" type="framework">`) at
+   those exact two paths - this tree's own `type 0x2` fragment's cpio
+   entries win the directory-merge over stock's `type 0x1` copies (same
+   "later fragment wins on a path collision" mechanism used throughout
+   this tree already), which was enough: `keystore2`/`vendor.keymint-
+   mitee` both settled to `running` (never `restarting`) and TWRP reached
+   its actual home screen.
+
+One easy-to-hit gotcha discovered along the way, unrelated to any of the
+above but worth remembering: `adb reboot recovery` (and TWRP's own
+`Reboot > Recovery`) sets the BCB (`/dev/block/by-name/misc`, first 32
+bytes = `boot-recovery`) so the *next* power-on also goes to recovery,
+even a plain `adb reboot` or physically power-cycling with no button
+combo held. If normal boot ever seems to have broken again right after
+testing recovery, check this before assuming a real regression:
+```
+adb shell "dd if=/dev/block/by-name/misc bs=1 count=64 2>/dev/null | xxd"
+adb shell "dd if=/dev/zero of=/dev/block/by-name/misc bs=1 count=64"
+```
 
 HOW TO COMPILE:
 ```
 source build/envsetup.sh
 lunch twrp_taiko-eng
 mka vendorbootimage
+device/xiaomi/taiko/tools/assemble_vendor_boot.sh
 ```
+The last step is not optional - `$OUT/vendor_boot.img` straight out of
+`mka vendorbootimage` only boots TWRP, not normal Android (see above). The
+script overwrites `$OUT/vendor_boot.img` in place with the spliced,
+real-bootable version.

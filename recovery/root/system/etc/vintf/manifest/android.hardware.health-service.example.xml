@@ -1,0 +1,38 @@
+<!--
+    Override for the stock-platform-fragment vendor_boot test (see
+    README's KNOWN ISSUE section: normal boot needs the real, unmodified
+    stock PLATFORM/generic vendor ramdisk fragment - our own AOSP-built
+    one can't replicate it).
+
+    Stock's platform fragment ships this exact file at this exact path
+    (/system/etc/vintf/manifest/android.hardware.health-service.example.xml)
+    declaring `<manifest version="9.0" type="device">` - a manifest
+    *version* this tree's AOSP-13 libvintf (@4.0) can't parse, AND typed
+    "device" while sitting in the *framework* manifest scan directory.
+    Confirmed live: every single hwservicemanager/servicemanager
+    getFrameworkHalManifest() call logged
+    "-22 VINTF parse error: Illformed file: .../android.hardware.health-
+    service.example.xml: Unrecognized manifest.version 9.0" - one bad
+    fragment poisons the whole framework manifest fetch for the entire
+    directory, not just this HAL entry. keystore2's early
+    `Check failed: serviceManager.get() Failed to get ServiceManager`
+    crash-loop (never recovering, every ~5s restart hitting the exact
+    same failure) lines up with this - see tee-supplicant.rc's
+    mount_persist_delayed/`user root` history for the two theories ruled
+    out first (persist mount timing, mitee TA storage permissions)
+    before landing on this being a framework-manifest-parse failure
+    instead.
+
+    cpio's directory-merge semantics (later vendor_ramdisk fragment wins
+    on a path collision, used throughout this tree already) let this
+    file - part of our own recovery resources, RECOVERY-fragment content
+    - override stock's copy at the exact same path. Reduced to a no-op,
+    zero-HAL framework manifest fragment rather than reproducing the
+    original health HAL declaration: TWRP's own health@2.1-service is
+    already registered through a different mechanism (confirmed running
+    live independent of this file), so there's nothing this fragment
+    needs to actually declare - it only needs to parse successfully so
+    the rest of the framework manifest directory scan isn't poisoned.
+-->
+<manifest version="1.0" type="framework">
+</manifest>

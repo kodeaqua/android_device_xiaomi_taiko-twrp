@@ -1,7 +1,28 @@
 # For MTK DRM integration:
+#
+# user changed from `system` to `root`: with the stock-platform-fragment
+# vendor_boot (see README's KNOWN ISSUE section), manually mounting
+# /mnt/vendor/persist live over adb and populating it exactly like this
+# file's mount_persist_delayed service does made zero difference to
+# keymint-mitee's crash-loop (confirmed live - crashes continued at the
+# same ~5s cadence for 5+ minutes after persist was already mounted,
+# restorecon'd and set up by hand), which rules out the mount-timing
+# race this was all built around. Persist's real, factory-provisioned
+# content includes an `otrp` dir that's `drwx------ root system` -
+# owner-only, the `system` group grants nothing since the group bits
+# are all zero - and every mitee service here (tee-supplicant,
+# keymint-mitee, gatekeeper-mitee) runs `user system`, which cannot
+# open, read, or write inside it under plain POSIX permissions
+# regardless of SELinux (permissive here anyway). That access denial on
+# whatever persistent-storage path the TA actually touches is a much
+# more direct explanation for "Check failed: status == STATUS_OK" than
+# a race that manual testing just disproved. Untested whether `otrp`
+# specifically is the path in question (no TA-side tracing available),
+# but running as root removes this whole class of problem regardless
+# of which persist subpath it turns out to be.
 service tee-supplicant /vendor/bin/tee-supplicant
     class core
-    user system
+    user root
     group system secure_element nfc
     capabilities SYS_RAWIO
     disabled
@@ -26,14 +47,14 @@ service tee-supplicant /vendor/bin/tee-supplicant
 # symptom - keeping the merge since it's already proven to parse.)
 service vendor.keymint-mitee /vendor/bin/hw/android.hardware.security.keymint@4.0-service.mitee
     class early_hal
-    user system
+    user root
     group system
     disabled
     seclabel u:r:recovery:s0
 
 service vendor.gatekeeper_mitee /vendor/bin/hw/android.hardware.gatekeeper-service.mitee
     class hal
-    user system
+    user root
     group system
     seclabel u:r:recovery:s0
 
@@ -54,12 +75,27 @@ service vendor.gatekeeper_mitee /vendor/bin/hw/android.hardware.gatekeeper-servi
 # recovery.fstab's persist line has the `check` flag, so TWRP briefly
 # mounts persist during its own early partition scan to verify the fs,
 # then unmounts it right after (persist isn't meant to stay mounted for
-# TWRP's GUI). That scan happens consistently ~2-4s into boot, earlier
-# than every init trigger tried. keymint-mitee already crash-loops and
-# gets restarted by init every ~5s regardless of any of this, so instead
-# of chasing a trigger that fires strictly after TWRP's one-time scan,
-# this just sleeps well past that window then mounts for good - the next
-# automatic keymint-mitee restart picks up the now-persistent mount.
+# TWRP's GUI). That scan happened consistently ~2-4s into boot on the
+# builds this was originally tuned against, earlier than every init
+# trigger tried, so a flat sleep-8-then-mount-once was enough to land
+# safely after it.
+#
+# On the stock-platform-fragment vendor_boot test (normal-boot fix, see
+# README's KNOWN ISSUE section) this got a lot more scrutiny: a retry-loop
+# version of this script (sleep 8, mount, then re-check/remount every 3s
+# for a minute) never actually ran at all - init.svc.mount_persist_delayed
+# came back "stopped" with zero trace of it in logcat, most likely a
+# toybox sh syntax problem in the loop, not investigated further because
+# a live test made the whole timing angle moot anyway: manually running
+# this exact mount+restorecon+mkdir+chown+chmod+setprop sequence over adb
+# while keymint-mitee was already mid-crash-loop made no difference
+# whatsoever - it kept crash-looping at the same ~5s cadence for 5+
+# minutes afterward. So persist mount timing was never the problem on
+# this build; see the `user root` change above on tee-supplicant/
+# keymint-mitee/gatekeeper_mitee for the actual current theory. Kept as a
+# plain sleep-then-mount-once (reverted the untested loop) since there's
+# no evidence anymore that landing after TWRP's scan-unmount is the hard
+# part.
 service mount_persist_delayed /system/bin/sh -c "sleep 8; mount -t ext4 -o noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc /dev/block/by-name/persist /mnt/vendor/persist; restorecon -R /mnt/vendor/persist; mkdir -p /mnt/vendor/persist/data; chown system:system /mnt/vendor/persist/data; chmod 0755 /mnt/vendor/persist/data; mkdir -p /mnt/vendor/persist/fdsd; chown system:system /mnt/vendor/persist/fdsd; chmod 0755 /mnt/vendor/persist/fdsd; setprop vendor.teefs_state ready"
     class main
     user root
