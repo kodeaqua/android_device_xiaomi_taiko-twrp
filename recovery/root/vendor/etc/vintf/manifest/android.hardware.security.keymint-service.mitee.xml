@@ -13,4 +13,27 @@
         <version>3</version>
         <fqname>IRemotelyProvisionedComponent/default</fqname>
     </hal>
+    <!-- android.hardware.security.secureclock and .sharedsecret were
+         missing from this fragment entirely (only the keymint package
+         itself was declared) even though the keymint-mitee binary
+         registers both (confirmed via DT_NEEDED on
+         android.hardware.security.secureclock-V1-ndk.so and
+         android.hardware.security.sharedsecret-V1-ndk.so, and via
+         disassembling the CHECK(status == STATUS_OK) that SIGABRTs the
+         process: it's checking AServiceManager_addService()'s return
+         value, not any TEE call - the TEE side succeeds cleanly per
+         /proc/mitee_log ("do_dispatch #1 err: 0"). servicemanager
+         rejects addService for any AIDL interface the caller's own
+         VINTF manifest doesn't declare, independent of SELinux (which
+         was already permissive here) - explaining the crash. -->
+    <hal format="aidl">
+        <name>android.hardware.security.secureclock</name>
+        <version>1</version>
+        <fqname>ISecureClock/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>android.hardware.security.sharedsecret</name>
+        <version>1</version>
+        <fqname>ISharedSecret/default</fqname>
+    </hal>
 </manifest>
