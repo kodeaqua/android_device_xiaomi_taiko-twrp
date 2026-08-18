@@ -6,6 +6,7 @@
 // successful operation), so a minimal drop-in replacement - not a full
 // libc++ upgrade - is sufficient to satisfy the dynamic linker.
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -70,4 +71,20 @@ extern "C" void* OPENSSL_sk_value(const OPENSSL_STACK* sk, size_t i) {
 
 extern "C" int OPENSSL_sk_push(OPENSSL_STACK* sk, void* p) {
     return sk_push(sk, p);
+}
+
+// Fourth gap, same "BoringSSL renamed it" pattern as the OPENSSL_sk_*
+// wrappers above: ASN1_TIME_set_posix is a newer explicit-POSIX-time-named
+// alias for the existing ASN1_TIME_set (this tree's libcrypto.so exports
+// the latter, confirmed via nm -D, not the former). time_t is already a
+// 64-bit signed type on this platform, matching int64_t bit-for-bit, so
+// the cast is a plain reinterpretation, not a real conversion.
+#include <time.h>
+
+typedef struct asn1_string_st ASN1_TIME;
+
+extern "C" ASN1_TIME* ASN1_TIME_set(ASN1_TIME* s, time_t t);
+
+extern "C" ASN1_TIME* ASN1_TIME_set_posix(ASN1_TIME* s, int64_t t) {
+    return ASN1_TIME_set(s, static_cast<time_t>(t));
 }
