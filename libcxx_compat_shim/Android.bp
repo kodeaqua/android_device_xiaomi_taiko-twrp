@@ -1,0 +1,15 @@
+// Minimal shim providing std::__libcpp_verbose_abort for taiko's real mitee
+// KeyMint/Gatekeeper HAL binaries (built against a newer libc++/NDK than
+// this AOSP-13 TWRP tree ships). See verbose_abort_shim.cpp and
+// device/xiaomi/taiko/README.md for the full explanation.
+cc_library_shared {
+    name: "libcxx_verbose_abort_shim_mitee",
+    vendor: true,
+    srcs: ["verbose_abort_shim.cpp"],
+    cflags: [
+        "-Wall",
+        "-Wno-unused-parameter",
+    ],
+    stl: "none",
+    system_shared_libs: ["libc", "libm", "libdl"],
+}
