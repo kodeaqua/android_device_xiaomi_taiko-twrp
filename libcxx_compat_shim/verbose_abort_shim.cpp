@@ -36,3 +36,38 @@ inline namespace __1 {
 extern "C" void AIBinder_Class_setTransactionCodeToFunctionNameMap(
         void* /*clazz*/, const char* const* /*transactionCodeToFunction*/, size_t /*length*/) {
 }
+
+// Third gap: libkeymaster_portable_mitee.so/libkeymint_mitee.so/
+// libcppbor_external_mitee.so were built against a BoringSSL vintage that
+// renamed the generic OPENSSL_STACK helpers from the classic unprefixed
+// sk_* names to OPENSSL_sk_* (part of aligning with upstream OpenSSL's
+// naming). This tree's own libcrypto.so still only exports the old
+// unprefixed names (confirmed via nm -D) - same struct, same ABI, purely a
+// naming-convention rename upstream, so - unlike the two stubs above -
+// these are real forwarding wrappers to the equivalent already-linked
+// libcrypto.so functions, not no-ops. OPENSSL_free needed no wrapper: this
+// tree's libcrypto.so already exports it under that exact name.
+typedef struct stack_st OPENSSL_STACK;
+
+extern "C" {
+OPENSSL_STACK* sk_new_null(void);
+size_t sk_num(const OPENSSL_STACK* sk);
+void* sk_value(const OPENSSL_STACK* sk, size_t i);
+int sk_push(OPENSSL_STACK* sk, void* p);
+}
+
+extern "C" OPENSSL_STACK* OPENSSL_sk_new_null(void) {
+    return sk_new_null();
+}
+
+extern "C" size_t OPENSSL_sk_num(const OPENSSL_STACK* sk) {
+    return sk_num(sk);
+}
+
+extern "C" void* OPENSSL_sk_value(const OPENSSL_STACK* sk, size_t i) {
+    return sk_value(sk, i);
+}
+
+extern "C" int OPENSSL_sk_push(OPENSSL_STACK* sk, void* p) {
+    return sk_push(sk, p);
+}

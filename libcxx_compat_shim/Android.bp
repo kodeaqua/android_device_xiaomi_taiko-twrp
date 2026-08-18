@@ -12,4 +12,5 @@ cc_library_shared {
     ],
     stl: "none",
     system_shared_libs: ["libc", "libm", "libdl"],
+    shared_libs: ["libcrypto"],
 }
