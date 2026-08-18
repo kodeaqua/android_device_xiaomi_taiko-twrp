@@ -37,6 +37,37 @@ service vendor.gatekeeper_mitee /vendor/bin/hw/android.hardware.gatekeeper-servi
     group system
     seclabel u:r:recovery:s0
 
+# /mnt/vendor/persist is declared in recovery.fstab but that only registers
+# it with TWRP's own GUI mount manager - it's not mounted automatically at
+# boot the way real firmware's vold/fstab.<hw> would. mitee's TA relies on
+# real storage under here (confirmed live: without it, keymint-mitee
+# SIGABRTs with "MiteeKeymint_ipc: Check failed: status == STATUS_OK" /
+# TEEC oresult=TEEC_ORIGIN_TRUSTED_APP on its first TEE call that touches
+# persistent storage).
+#
+# This runs as a `sleep`-then-mount oneshot service, not a plain `mount`
+# line in an action, because every trigger tried (`fs`, `post-fs`,
+# `property:hwservicemanager.ready=true`) fires too early on this device:
+# logcat consistently showed the kernel actually mounting persist
+# ("EXT4-fs (sdc16): mounted...") followed within ~200ms by "...
+# unmounting..." attributed to TWRP's own "recovery" process, not init -
+# recovery.fstab's persist line has the `check` flag, so TWRP briefly
+# mounts persist during its own early partition scan to verify the fs,
+# then unmounts it right after (persist isn't meant to stay mounted for
+# TWRP's GUI). That scan happens consistently ~2-4s into boot, earlier
+# than every init trigger tried. keymint-mitee already crash-loops and
+# gets restarted by init every ~5s regardless of any of this, so instead
+# of chasing a trigger that fires strictly after TWRP's one-time scan,
+# this just sleeps well past that window then mounts for good - the next
+# automatic keymint-mitee restart picks up the now-persistent mount.
+service mount_persist_delayed /system/bin/sh -c "sleep 8; mount -t ext4 -o noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc /dev/block/by-name/persist /mnt/vendor/persist; restorecon -R /mnt/vendor/persist; mkdir -p /mnt/vendor/persist/data; chown system:system /mnt/vendor/persist/data; chmod 0755 /mnt/vendor/persist/data; mkdir -p /mnt/vendor/persist/fdsd; chown system:system /mnt/vendor/persist/fdsd; chmod 0755 /mnt/vendor/persist/fdsd; setprop vendor.teefs_state ready"
+    class main
+    user root
+    group root
+    seclabel u:r:recovery:s0
+    disabled
+    oneshot
+
 
 on post-fs
     write /proc/bootprof "init tee-supplicant"
@@ -57,39 +88,15 @@ on post-fs
     enable vendor.keymint-mitee
     start tee-supplicant
 
-# The persist mount + vendor.keymint-mitee/vendor.gatekeeper_mitee start
-# deliberately live in their own action on `property:hwservicemanager.ready`
-# (same trigger already used by gatekeeper-1-0/keymaster a few lines below
-# in init.recovery.mt6789.rc) rather than alongside tee-supplicant above.
-# History: this action originally ran on `fs`, then `post-fs` (with a
-# `wait` mount flag added too) - neither stuck. Root-caused via logcat:
-# /mnt/vendor/persist WAS actually getting mounted (kernel logged
-# "EXT4-fs (sdc16): mounted...") but then immediately unmounted again a
-# few hundred ms later, timestamped to TWRP's own "recovery" process (not
-# init) - recovery.fstab's persist line has `check` (TWRP mounts briefly
-# to verify the fs, then unmounts once done, since persist isn't meant to
-# stay mounted for TWRP's own GUI). Any mount attempt racing before that
-# TWRP-internal scan finishes gets silently undone right after. Moving
-# to `hwservicemanager.ready` - a signal that only fires well after
-# TWRP's early partition scan is done - avoids the race instead of
-# guessing at trigger names/delays again.
+# vendor.keymint-mitee/vendor.gatekeeper_mitee start on
+# `property:hwservicemanager.ready` (same trigger already used by
+# gatekeeper-1-0/keymaster a few lines below in init.recovery.mt6789.rc)
+# rather than alongside tee-supplicant above. This is just when they're
+# first kicked off, not when persist becomes available - see
+# mount_persist_delayed above for that part; keymint-mitee crash-loops
+# until persist is actually mounted regardless of this trigger's timing.
 on property:hwservicemanager.ready=true
-    # /mnt/vendor/persist is declared in recovery.fstab but that only
-    # registers it with TWRP's own GUI mount manager - it's not mounted
-    # automatically at boot the way real firmware's vold/fstab.<hw> would.
-    # mitee's TA relies on real storage under here (confirmed live: without
-    # this mount, /mnt/vendor/persist/{data,fdsd} below just end up as
-    # empty stub dirs in the ramdisk's own rootfs, and the keymint-mitee
-    # service SIGABRTs with "MiteeKeymint_ipc: Check failed: status ==
-    # STATUS_OK" / TEEC oresult=TEEC_ORIGIN_TRUSTED_APP on its first TEE
-    # call that touches persistent storage). Mount it explicitly so the
-    # restorecon/mkdir below - and the TA - see the real partition.
-    mount ext4 /dev/block/by-name/persist /mnt/vendor/persist wait noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc
-   # set SELinux security contexts on upgrade or policy update
-    restorecon_recursive /mnt/vendor/persist
-    mkdir /mnt/vendor/persist/data 0755 system system
-    mkdir /mnt/vendor/persist/fdsd 0755 system system
-    setprop vendor.teefs_state ready
+    start mount_persist_delayed
     setprop ro.hardware.gatekeeper mitee
     # Stock firmware relies on the generic AOSP init.rc's
     # `on late-init { class_start early_hal }` / `class_start hal` to
