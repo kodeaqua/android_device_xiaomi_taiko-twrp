@@ -50,7 +50,7 @@ on fs
     # STATUS_OK" / TEEC oresult=TEEC_ORIGIN_TRUSTED_APP on its first TEE
     # call that touches persistent storage). Mount it explicitly so the
     # restorecon/mkdir below - and the TA - see the real partition.
-    mount ext4 /dev/block/by-name/persist /mnt/vendor/persist noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc
+    mount ext4 /dev/block/by-name/persist /mnt/vendor/persist wait noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc
    # set SELinux security contexts on upgrade or policy update
     restorecon_recursive /mnt/vendor/persist
     chmod 0660 /dev/tee0
