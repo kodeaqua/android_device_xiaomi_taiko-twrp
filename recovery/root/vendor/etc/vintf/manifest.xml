@@ -1,0 +1,117 @@
+<!--
+    Input:
+        device/mediatek/vendor/common/project_manifest/manifest_audio.xml
+        vendor/xiaomi/proprietary/mtdservice/vintf/manifest_vendor.xiaomi.hardware.mtdservice.xml
+        vendor/xiaomi/proprietary/mfidoca/vintf/manifest_vendor.xiaomi.hardware.mfidoca.xml
+        vendor/xiaomi/proprietary/mlipay/vintf/manifest_vendor.xiaomi.hardware.mlipay.xml
+        vendor/xiaomi/proprietary/soterservice/vintf/manifest_vendor.xiaomi.hardware.soterservice.xml
+        vendor/xiaomi/proprietary/tidaservice/vintf/manifest_vendor.xiaomi.hardware.tidaservice.xml
+        vendor/xiaomi/proprietary/vsimapp/vintf/manifest_vendor.xiaomi.hardware.vsimapp.xml
+        device/mediatek/vendor/common/project_manifest/manifest_log.xml
+        device/mediatek/vendor/common/project_manifest/manifest_aee.xml
+        device/mediatek/vendor/common/project_manifest/manifest_boot.xml
+        device/mediatek/vendor/common/project_manifest/manifest_pq.xml
+        device/mediatek/vendor/common/project_manifest/manifest_mmservice.xml
+        device/mediatek/vendor/common/project_manifest/manifest_mmagent.xml
+        device/mediatek/common/project_manifest/manifest_dmc.xml
+        device/mediatek/common/project_manifest/manifest_apmonitor.xml
+        device/mediatek/vendor/common/project_manifest/manifest_nwk_opt.xml
+        device/mediatek/vendor/common/project_manifest/manifest_composer.xml
+        device/mediatek/vendor/common/manifest_target_level.xml
+        device/mediatek/vendor/common/manifest.xml
+-->
+<manifest version="9.0" type="device" target-level="202504">
+    <hal format="aidl">
+        <name>android.hardware.soundtrigger3</name>
+        <version>3</version>
+        <fqname>ISoundTriggerHw/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.mediatek.hardware.aee</name>
+        <fqname>IAee/AEE</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.mediatek.hardware.apmonitor</name>
+        <fqname>IApmService/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.mediatek.hardware.atci</name>
+        <fqname>IAtcid/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.mediatek.hardware.audio</name>
+        <fqname>IMtkAudio/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.mediatek.hardware.camera.atms</name>
+        <fqname>IATMs/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.mediatek.hardware.camera.bgservice</name>
+        <fqname>IBGService/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.mediatek.hardware.composer_ext</name>
+        <fqname>IComposerExt/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.mediatek.hardware.dmc</name>
+        <fqname>IDmcService/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.mediatek.hardware.log</name>
+        <fqname>ILog/ATMWiFiHidlServer</fqname>
+        <fqname>ILog/ConnsysFWHidlServer</fqname>
+        <fqname>ILog/LoggerHidlServer</fqname>
+        <fqname>ILog/MobileLogHidlServer</fqname>
+        <fqname>ILog/ModemLogHidlServer</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.mediatek.hardware.mmagent</name>
+        <fqname>IMMAgent/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.mediatek.hardware.mms</name>
+        <fqname>IMms/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.mediatek.hardware.nvram</name>
+        <fqname>INvram/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.mediatek.hardware.nwk_opt_new</name>
+        <fqname>INwkOptNew/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.mediatek.hardware.pq_aidl</name>
+        <version>7</version>
+        <fqname>IPictureQuality_AIDL/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.aidl.mtdservice</name>
+        <fqname>IMTService/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.aidl.tidaservice</name>
+        <fqname>ITidaService/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.mfidoca</name>
+        <fqname>IFidoService/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.mlipay</name>
+        <fqname>IMlipayService/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.soterservice</name>
+        <fqname>ISoter/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.vsimapp</name>
+        <fqname>IVSIMService/default</fqname>
+    </hal>
+    <sepolicy>
+        <version>202504</version>
+    </sepolicy>
+</manifest>

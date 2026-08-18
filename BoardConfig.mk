@@ -177,35 +177,49 @@ BOARD_INCLUDE_RECOVERY_RAMDISK_IN_VENDOR_BOOT := true
 TARGET_RECOVERY_FSTAB := $(DEVICE_PATH)/recovery/root/system/etc/recovery.fstab
 
 # Crypto
-# TW_INCLUDE_CRYPTO is disabled entirely (not just FBE metadata decrypt):
-# bootable/recovery/Android.mk unconditionally adds
-# -DTW_INCLUDE_FBE_METADATA_DECRYPT whenever TW_INCLUDE_CRYPTO is true
-# (it is not gated by our own BoardConfig var of the same name), so
-# there is no way to keep basic crypto UI while dropping just the
-# metadata-decrypt call from device-tree config alone - and patching
-# bootable/recovery (a separate upstream repo, not part of this device
-# tree) is out of scope here.
+# TW_INCLUDE_CRYPTO was previously disabled entirely because the compiled-in
+# android::vold::fscrypt_mount_metadata_encrypted() call (system/vold/
+# MetadataCrypt.cpp) hung forever waiting for a KeyMint/Keystore2 HAL that
+# didn't exist in the ramdisk - taiko uses Xiaomi's own in-house "mitee" TEE
+# (mitee.ko), not the Trustonic "beanpod" stack rock's tree carried (which
+# was correctly dropped rather than shipped unverified, since it would never
+# have worked - different TEE, different wire protocol, different .ta
+# format).
 #
-# That compiled-in call - android::vold::fscrypt_mount_metadata_encrypted()
-# in system/vold/MetadataCrypt.cpp - unwraps the FBE metadata key
-# through the real KeyMint/Keystore2 HAL. taiko has no matching HAL
-# bundled (see README - rock's Trustonic "beanpod" stack was dropped
-# since taiko uses Xiaomi's own mitee TEE instead), so it hangs
-# indefinitely waiting for a service that never registers. Confirmed
-# live on real hardware: `adb shell ps -A` showed the recovery process
-# asleep on futex_wait_queue immediately after the "Using additional
-# fstab for decryption" log line (printed right before this call,
-# partitionmanager.cpp:597-599) - the whole GUI was stuck at the splash
-# screen since this runs on TWRP's main thread.
+# This is now fixed properly (not by patching bootable/recovery, which
+# doesn't gate TW_INCLUDE_FBE_METADATA_DECRYPT independently anyway - see
+# git history) by bundling taiko's REAL mitee-based KeyMint/Gatekeeper HAL,
+# extracted from the retail vendor.img in the firmware dump referenced in
+# the README (super.img -> lpunpack -p vendor_a -> fsck.erofs --extract):
+#   - vendor/bin/hw/android.hardware.security.keymint@4.0-service.mitee
+#   - vendor/bin/hw/android.hardware.gatekeeper-service.mitee
+#   - vendor/bin/tee-supplicant (talks to /dev/tee0 via mitee.ko)
+#   - vendor/lib64/{libteecli,libkeymint,libgatekeeper,...}.so (real
+#     dependency closure per `readelf -d`, everything else - libc, liblog,
+#     libbinder_ndk, etc. - was already present as a TWRP/AOSP dependency)
+#   - vendor/mitee/ta/*.ta (13 trusted-application blobs, ~7.3MB total;
+#     bundled verbatim/unfiltered since individual TA purposes aren't
+#     documented and mitee TAs may depend on each other)
+#   - vendor/etc/init/{keymint,gatekeeper,tee-supplicant}*.rc (verbatim
+#     stock rc - the tee-supplicant one's "on fs" block does the /dev/tee0
+#     chmod/chown, enables the keymint service, and starts tee-supplicant)
+#   - vendor/etc/vintf/manifest.xml + manifest/*.xml fragments (needed for
+#     the real HAL to register/be found at all - was completely missing
+#     before, which is a separate issue from TWRP's own cosmetic
+#     Process_Keymaster_Version() logging in partitionmanager.cpp, which
+#     only ever looks for the legacy HIDL "android.hardware.keymaster"
+#     name and will therefore keep printing an empty keymaster_ver on any
+#     modern all-AIDL device like this one - confirmed harmless/cosmetic,
+#     not read anywhere else in bootable/recovery)
+#   - vendor/etc/selinux/vendor_tee_service_contexts
 #
-# TW_INCLUDE_CRYPTO := false avoids the hang and lets TWRP boot to the
-# main UI, at the cost of losing all decrypt UI/gatekeeper support for
-# now (Decrypt_Data() in partitionmanager.cpp is itself #ifdef
-# TW_INCLUDE_CRYPTO, so with it off /data just shows as an encrypted,
-# unmountable partition instead of attempting - and hanging on - any
-# decrypt). Re-enable once a real taiko KeyMint/Gatekeeper HAL is
-# sourced from a rooted device.
-TW_INCLUDE_CRYPTO := false
+# UNVERIFIED on real hardware yet: this device tree has no custom sepolicy
+# sources (no device/xiaomi/taiko/sepolicy dir), so if TWRP's own default
+# recovery sepolicy denies binder access between vold/keystore2 and these
+# newly-added vendor.keymint-mitee/vendor.gatekeeper_mitee services, this
+# could hang again the same way the original bug did. If that happens,
+# check `adb shell dmesg | grep avc` for denials first.
+TW_INCLUDE_CRYPTO := true
 BOARD_USES_METADATA_PARTITION := true
 
 # Encryption

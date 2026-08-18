@@ -14,7 +14,7 @@ FLASHING ROM (partition/fstab layout verified against retail images) √
 FLASHING GSI √
 TOUCH — verified working on real hardware (nt36xxx_spi + real firmware, see below) √
 ROTATION — verified working on real hardware (TW_ROTATION := 180, see below) √
-DECRYPTION — UNVERIFIED, likely needs more work (see caveats)
+DECRYPTION — real mitee KeyMint/Gatekeeper HAL bundled, UNVERIFIED on real hardware yet (see caveats)
 
 ## What was re-derived from the real taiko firmware
 
@@ -50,11 +50,49 @@ DECRYPTION — UNVERIFIED, likely needs more work (see caveats)
   (`teei_daemon`, `keymint-beanpod`, `/vendor/thh/ta/*`) into the recovery
   ramdisk for FBE password decryption. taiko's real kernel module list loads
   `mitee.ko` instead — Xiaomi's own in-house TEE, not Trustonic — so that
-  bundle would not have worked and was removed rather than shipped
-  unverified. Only the generic AOSP software gatekeeper is left in place.
-  Getting FBE decryption working needs the real keymint/gatekeeper HAL
-  pulled from a rooted taiko's `/vendor` (its filesystem is EROFS; this
-  environment had no erofs-utils/root available to unpack it).
+  bundle would never have worked (different wire protocol, different `.ta`
+  format) and was correctly dropped rather than shipped unverified.
+  Getting real FBE decryption needed taiko's own mitee-based KeyMint/
+  Gatekeeper HAL, which was unavailable earlier for lack of erofs-utils/root
+  to unpack the EROFS `vendor` partition — since resolved (`erofs-utils`
+  built from source against this checkout's `external/erofs-utils`, and
+  `lpunpack`/`simg2img` built from `system/extras/partition_tools` and
+  `system/core/libsparse` respectively, all host tools already present in
+  this AOSP tree). The real stack was extracted from the retail vendor.img
+  (`super.img` → `simg2img` → `lpunpack -p vendor_a` → `fsck.erofs
+  --extract`) and bundled verbatim:
+  - `vendor/bin/hw/android.hardware.security.keymint@4.0-service.mitee`
+  - `vendor/bin/hw/android.hardware.gatekeeper-service.mitee`
+  - `vendor/bin/tee-supplicant` (talks to `/dev/tee0`, created by `mitee.ko`)
+  - `vendor/lib64/*.so` — real dependency closure per `readelf -d` on the
+    two service binaries (libc/liblog/libbinder_ndk/etc. were already
+    present as standard TWRP/AOSP recovery dependencies, not re-bundled)
+  - `vendor/mitee/ta/*.ta` — 13 trusted-application blobs (~7.3MB), bundled
+    unfiltered since individual TA purposes aren't documented and mitee TAs
+    may depend on each other
+  - `vendor/etc/init/*.rc` — verbatim stock rc files (the tee-supplicant
+    one's `on fs` block does the `/dev/tee0` chmod/chown, `enable`s the
+    keymint service, and starts tee-supplicant)
+  - `vendor/etc/vintf/manifest.xml` + per-service `manifest/*.xml`
+    fragments — were completely absent before, which is a real bug
+    (separate from TWRP's own cosmetic `Process_Keymaster_Version()`
+    logging in `bootable/recovery/partitionmanager.cpp`, confirmed to only
+    ever look for the legacy HIDL `android.hardware.keymaster` name — it
+    will keep logging an empty `keymaster_ver` on this modern all-AIDL
+    device regardless, but that value isn't read anywhere else in
+    bootable/recovery, so it's harmless/cosmetic only)
+  - `vendor/etc/selinux/vendor_tee_service_contexts`
+
+  `TW_INCLUDE_CRYPTO` is re-enabled accordingly. **Not yet verified on real
+  hardware** — this device tree has no custom sepolicy sources, so if
+  TWRP's own default recovery sepolicy denies binder access between vold/
+  keystore2 and the newly-added `vendor.keymint-mitee`/
+  `vendor.gatekeeper_mitee` services, this could hang the same way the
+  original (now-fixed) splash-hang bug did. If so, check
+  `adb shell dmesg | grep avc` for denials first. The old generic AOSP
+  software gatekeeper (from rock) is left in place alongside the real
+  mitee one as a fallback; they register under different HAL namespaces
+  (legacy HIDL vs. AIDL) so shouldn't conflict directly.
 - **Touch**: resolved. taiko uses `nt36xxx_spi.ko` + `xiaomi.ko` (Novatek),
   loaded at runtime via `TW_LOAD_VENDOR_MODULES`. The touch IC also needs its
   firmware blob (`novatek_ts_fw_boe.bin`, pulled from a live device) uploaded
