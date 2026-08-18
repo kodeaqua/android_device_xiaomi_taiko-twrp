@@ -15,12 +15,10 @@ FLASHING GSI √
 TOUCH — verified working on real hardware (nt36xxx_spi + real firmware, see below) √
 ROTATION — verified working on real hardware (TW_ROTATION := 180, see below) √
 DECRYPTION — real mitee KeyMint/Gatekeeper HAL, verified working end-to-end on real
-  hardware for freshly-formatted /data (see caveats: pre-existing stock-encrypted
-  /data is blocked by KeyMint anti-rollback protection, not fixable from recovery)
-NORMAL BOOT ("boot to System") — verified working again on real hardware, same
-  as TWRP/recovery mode. See "vendor_boot.img: normal boot + TWRP splash-hang,
-  both resolved" section below - `tools/assemble_vendor_boot.sh` is now a
-  required extra step after `mka vendorbootimage`, not optional.
+  hardware, including /data that a real Android system (GSI) encrypted - see the
+  DECRYPTION section for why that needed PLATFORM_VERSION := 99 √
+NORMAL BOOT ("boot to System") — verified working on real hardware, same as
+  TWRP/recovery mode, from the image `mka vendorbootimage` produces directly √
 
 ## What was re-derived from the real taiko firmware
 
@@ -166,22 +164,42 @@ NORMAL BOOT ("boot to System") — verified working again on real hardware, same
   cleanly (`Successfully registered Keystore 2.0 service`), and a
   **freshly-formatted `/data`** (via TWRP's own Wipe > Format Data) mounts
   and decrypts correctly end-to-end (real F2FS + inlinecrypt, confirmed via
-  `/proc/mounts`). **Pre-existing stock-encrypted `/data`** (i.e. the
-  metadata-encryption key created back when the device still ran real
-  HyperOS) is a different story: the mitee TA enforces KeyMint's
-  anti-rollback protection (`CheckVersionInfo`/`LoadKey` in
-  `mitee_keymaster_context.cpp`, per `/proc/mitee_log`) against the OLD
-  key's embedded patchlevel, and none of this tree's own userspace HAL
-  binaries actually call `ConfigureBootPatchlevel`/`ConfigureVendorPatchlevel`
-  (confirmed: not a single binary in the real retail vendor.img calls these
-  either) — the real boot-patchlevel state must be established via the
-  bootloader→TEE verified-boot chain directly, which a custom/unverified
-  boot chain like TWRP's can't satisfy. This looks like a hard, intentional
-  security boundary, not a bug — don't spend more time on it without new
-  information. The old generic AOSP software gatekeeper (from rock) is left
-  in place alongside the real mitee one as a fallback; they register under
-  different HAL namespaces (legacy HIDL vs. AIDL) so shouldn't conflict
-  directly.
+  `/proc/mounts`).
+
+  **`/data` encrypted by a real Android system also works — but only after
+  fixing OS_VERSION.** For a long time it did not: reading such a key always
+  failed the same way, KeyMint returning `KEY_REQUIRES_UPGRADE` (-62) and
+  then `INVALID_ARGUMENT` (-38) from the `upgradeKey()` that is supposed to
+  resolve it. That was misread as KeyMint's anti-rollback protection being
+  an intentional, unfixable boundary. It is not. Three things were ruled out
+  by direct experiment first: calling `earlyBootEnded()` before decrypting
+  (it succeeded, and the -62/-38 pair stayed byte-identical), running the
+  mitee services as root instead of system (helped them get further but did
+  not change this), and rewriting boot.img's header patch level. The
+  decisive experiment was building TWRP with a *low* patch level, formatting
+  /data under it, then reading that key back with the normal build:
+  `upgradeKey()` worked perfectly. So the TA's upgrade path was never
+  broken - only its input was.
+
+  `IKeyMintDevice.aidl` states the rule: `upgradeKey()` MUST return
+  `INVALID_ARGUMENT` if *any* version or patch level recorded in the key is
+  higher than the device's current value. `strings` on
+  `vendor/lib64/libkeymint_mitee.so` shows which properties the HAL reads
+  for those: `ro.build.version.release` (→ OS_VERSION),
+  `ro.build.version.security_patch`, `ro.vendor.build.security_patch`. The
+  patch dates were already pinned to 2099, but `PLATFORM_VERSION` was 13,
+  so OS_VERSION was 130000 - while the GSI writing the key runs Android 16,
+  i.e. 160000. Key above device, every single time. It also explains why a
+  TWRP-created key always re-read fine: 13 against 13. `PLATFORM_VERSION`
+  (and `PLATFORM_VERSION_LAST_STABLE`) are now 99, clearing any real
+  release; BoardConfig.mk documents the arithmetic. BOOT_PATCHLEVEL is the
+  one field not settable from here, but the bootloader hands it to the TA
+  directly, identical whether this device booted TWRP or Android, so it can
+  never be the mismatching one.
+
+  Note the direction only has to hold *for reading*: keystore2 does not
+  persist the upgraded blob for `Domain::BLOB` keys like vold's, so the key
+  on disk keeps its original values and the real system still boots.
 - **Touch**: resolved. taiko uses `nt36xxx_spi.ko` + `xiaomi.ko` (Novatek),
   loaded at runtime via `TW_LOAD_VENDOR_MODULES`. The touch IC also needs its
   firmware blob (`novatek_ts_fw_boe.bin`, pulled from a live device) uploaded
@@ -337,9 +355,9 @@ System boot is ever needed urgently):
 *trimmed* real generic content in budget at all - use stock's real `type
 0x1` fragment **completely unmodified, byte-for-byte**, and only trim
 *this tree's own* `type 0x2` (recovery) fragment enough to fit both under
-64MB together. `vendor_boot_stock/vendor_ramdisk00.stock.lz4` in this
-directory is that exact blob (27.6MB compressed), extracted once from this
-device's own factory `vendor_boot.img` and committed here since no build
+64MB together. `prebuilt/vendor_ramdisk.cpio.lz4` is that exact blob
+(27.6MB compressed), extracted once from this device's own factory
+`vendor_boot.img` and committed here since no build
 config in this tree can regenerate stock's proprietary bootstrap content
 (real init variant, linkerconfig, sepolicy, prop.default, res/, etc. -
 confirmed via byte comparison that this tree's own best AOSP-13 build
@@ -350,9 +368,20 @@ of stock's and missing all of that). The only thing trimmed from `type
 0x1` already ships the identical 210 files (this tree's own copies were
 extracted from the same firmware originally) and recovery mode
 concatenates both fragments anyway, so keeping two copies was pure waste
-against the budget. Final size: 62.9MB, comfortable margin under 64MB.
-`tools/assemble_vendor_boot.sh` does this whole splice automatically after
-`mka vendorbootimage` - see that script for the fully-commented mechanics.
+against the budget - so recovery/root ships no lib/modules at all now,
+which is why nothing has to be trimmed after the fact.
+
+This is wired into the build rather than done by a helper script, so
+`mka vendorbootimage` alone produces a directly flashable image:
+`build/tasks/vendor_boot.mk` (picked up by core/Makefile's
+`-include $(sort $(wildcard device/*/*/build/tasks/*.mk))` at the very end,
+after every image rule is defined) repoints INTERNAL_VENDOR_RAMDISK_TARGET
+at the prebuilt, which is what mkbootimg's `--vendor_ramdisk` then uses.
+The official BOARD_VENDOR_RAMDISK_FRAGMENT.*.PREBUILT variable only covers
+the *extra* fragments, never the main one, so it cannot express this. The
+RECOVERY fragment is still built from source on every compile, and the
+image goes through the normal assert-max-image-size and AVB
+add_hash_footer steps (which the old helper script skipped).
 
 That fix alone got normal boot working immediately, but flashing it
 revealed a second, separate problem: TWRP's own recovery GUI now hung at
@@ -414,9 +443,17 @@ HOW TO COMPILE:
 source build/envsetup.sh
 lunch twrp_taiko-eng
 mka vendorbootimage
-device/xiaomi/taiko/tools/assemble_vendor_boot.sh
 ```
-The last step is not optional - `$OUT/vendor_boot.img` straight out of
-`mka vendorbootimage` only boots TWRP, not normal Android (see above). The
-script overwrites `$OUT/vendor_boot.img` in place with the spliced,
-real-bootable version.
+`$OUT/vendor_boot.img` is ready to flash as-is; no post-processing step.
+
+One caveat that has bitten this tree repeatedly: deleting files from
+`recovery/root/` does not remove copies the build already staged under
+`$OUT/target/product/taiko/recovery/root/`, so a stale ramdisk can silently
+keep shipping them (this is how the removed lib/modules first blew past the
+64MB budget). When changing what recovery/root contains, clear the staged
+copy and the two intermediates before rebuilding:
+```
+rm -rf $OUT/recovery/root/<path you removed>
+rm -f $OUT/obj/PACKAGING/recovery_intermediates/ramdisk_files-timestamp
+rm -f $OUT/obj/PACKAGING/vendor_ramdisk_fragments_intermediates/recovery.cpio.lz4
+```

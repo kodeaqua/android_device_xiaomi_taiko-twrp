@@ -223,8 +223,41 @@ TW_INCLUDE_CRYPTO := true
 BOARD_USES_METADATA_PARTITION := true
 
 # Encryption
-PLATFORM_VERSION := 13
-PLATFORM_VERSION_LAST_STABLE := 13
+#
+# These four values are what KeyMint's anti-rollback ("ratchet") check
+# compares a key blob against, and getting them wrong is what blocked
+# decrypting a /data that a real Android system had encrypted (see
+# README's DECRYPTION section for the full investigation). The mitee HAL
+# reads exactly these properties - confirmed by `strings` on
+# vendor/lib64/libkeymint_mitee.so, which references
+# ro.build.version.release, ro.build.version.security_patch and
+# ro.vendor.build.security_patch alongside its os_patchlevel /
+# vendor_patchlevel / boot_patch_level fields - and passes them to the
+# TA as the device's *current* version. Per IKeyMintDevice.aidl,
+# upgradeKey() MUST fail with INVALID_ARGUMENT if any version or patch
+# level recorded in the key is HIGHER than the device's current value,
+# so every one of these has to sit above whatever OS wrote the key.
+#
+# PLATFORM_VERSION drives ro.build.version.release, which KeyMint turns
+# into OS_VERSION as major*10000 + minor*100 + patch (AOSP's own
+# keymaster_configuration_test.cpp: "6" -> 60000, "61.23.34" -> 612334).
+# It was 13 here, giving OS_VERSION 130000, while the GSI on this device
+# is Android 16 -> 160000. Key value > device value = exactly the
+# INVALID_ARGUMENT the TA kept returning, and it explains why a
+# TWRP-created key always re-read fine (13 vs 13) while a
+# system-created one never did. 99 -> 990000 clears any real Android
+# release by a wide margin. (IKeyMintDevice.aidl also carves out
+# OS_VERSION 0 as "upgrades to 0 are always allowed", which would work
+# too, but that relies on the closed TA implementing the special case;
+# a plain numeric comparison needs no such assumption.)
+#
+# The 2099 patch dates are the same idea for OS_PATCHLEVEL (YYYYMM) and
+# VENDOR_PATCHLEVEL (YYYYMMDD). BOOT_PATCHLEVEL is not settable from
+# here - the bootloader hands it to the TA directly (SetBootPatchlevel
+# in system/keymaster), so it is identical whether this device booted
+# TWRP or Android, and cannot be the mismatching field.
+PLATFORM_VERSION := 99
+PLATFORM_VERSION_LAST_STABLE := 99
 PLATFORM_SECURITY_PATCH := 2099-12-31
 VENDOR_SECURITY_PATCH := 2099-12-31
 

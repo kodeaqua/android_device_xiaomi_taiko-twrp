@@ -96,7 +96,25 @@ service vendor.gatekeeper_mitee /vendor/bin/hw/android.hardware.gatekeeper-servi
 # plain sleep-then-mount-once (reverted the untested loop) since there's
 # no evidence anymore that landing after TWRP's scan-unmount is the hard
 # part.
-service mount_persist_delayed /system/bin/sh -c "sleep 8; mount -t ext4 -o noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc /dev/block/by-name/persist /mnt/vendor/persist; restorecon -R /mnt/vendor/persist; mkdir -p /mnt/vendor/persist/data; chown system:system /mnt/vendor/persist/data; chmod 0755 /mnt/vendor/persist/data; mkdir -p /mnt/vendor/persist/fdsd; chown system:system /mnt/vendor/persist/fdsd; chmod 0755 /mnt/vendor/persist/fdsd; setprop vendor.teefs_state ready"
+#
+# The trailing bind of /mnt/vendor/persist onto /persist is unrelated to
+# the TEE and exists purely to silence a recurring
+# "Failed to mount '/persist' (Device or resource busy)" that followed
+# every "Updating partition details..." in the UI. TWRP ends up knowing
+# this one partition under two mount points: /mnt/vendor/persist from
+# recovery.fstab, and /persist from MIUI's own vendor fstab, which
+# TWPartitionManager::Setup_Fstab pulls off the real /vendor partition
+# once it is mounted and re-parses as /etc/additional.fstab (see
+# TWFunc::Find_Fstab in bootable/recovery). Update_System_Details() then
+# tries to mount both, and whichever loses gets EBUSY. TW_SKIP_ADDITIONAL_FSTAB
+# would drop the second entry outright, but that same additional fstab is
+# handed to fscrypt_mount_metadata_encrypted() as its fstab argument, so
+# disabling it risks the metadata decryption this device depends on -
+# hence binding rather than skipping: TWPartition::Mount() returns early
+# when Is_Mounted() finds the mount point in /proc/mounts, so /persist
+# simply stops being something it needs to mount. It is appended after
+# setprop so a failure here can never affect the TEE setup above it.
+service mount_persist_delayed /system/bin/sh -c "sleep 8; mount -t ext4 -o noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc /dev/block/by-name/persist /mnt/vendor/persist; restorecon -R /mnt/vendor/persist; mkdir -p /mnt/vendor/persist/data; chown system:system /mnt/vendor/persist/data; chmod 0755 /mnt/vendor/persist/data; mkdir -p /mnt/vendor/persist/fdsd; chown system:system /mnt/vendor/persist/fdsd; chmod 0755 /mnt/vendor/persist/fdsd; setprop vendor.teefs_state ready; mkdir -p /persist; mount -o bind /mnt/vendor/persist /persist"
     class main
     user root
     group root

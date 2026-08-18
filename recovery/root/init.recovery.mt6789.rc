@@ -29,7 +29,19 @@ on post-fs
     exec u:r:update_engine:s0 root root -- /system/bin/mtk_plpath_utils
     start mtk.plpath.utils.link
       # Support A/B feature for EMMC and UFS boot region
-    wait /dev/block/mmcblk0boot0 2
+    #
+    # A `wait /dev/block/mmcblk0boot0 2` used to sit here, inherited from
+    # MTK's eMMC-oriented template. taiko is UFS-only - its boot regions
+    # come up as the sda/sdb LUNs and no mmcblk0boot0 node is ever created
+    # by the kernel (dmesg lists sda, sdb and sdc, nothing else) - so that
+    # wait could only ever run out its full 2-second timeout, and it did so
+    # on every single boot: ro.boottime shows mtk.plpath.utils.link at
+    # 6.55s and then nothing until tee-supplicant/recovery at 8.57s, a
+    # two-second stall in init that TWRP's own startup sits behind. It was
+    # also self-defeating, since the very next line is what creates
+    # mmcblk0boot0 in the first place (as a symlink onto sda) - it was
+    # waiting for a node that only appears after it. Dropped; the symlinks
+    # below need no wait, as symlink() does not require its target to exist.
     symlink /dev/block/sda /dev/block/mmcblk0boot0
     symlink /dev/block/sdb /dev/block/mmcblk0boot1
     symlink /dev/block/mmcblk0boot0 /dev/block/platform/bootdevice/by-name/preloader_a
@@ -70,37 +82,36 @@ service mtk.plpath.utils.link /system/bin/mtk_plpath_utils
 # dropped rather than carried over unverified. taiko's real mitee-based
 # KeyMint/Gatekeeper HAL is now bundled instead (see
 # vendor/etc/init/{tee-supplicant,android.hardware.security.keymint.mitee@4.0-service,
-# android.hardware.gatekeeper-service.mitee}.rc) - this legacy generic AOSP
-# software gatekeeper (gatekeeper-1-0) is kept alongside it as a fallback,
-# harmless since it registers under the older HIDL namespace rather than
-# AIDL.
-service gatekeeper-1-0 /vendor/bin/hw/android.hardware.gatekeeper@1.0-service
-    interface android.hardware.gatekeeper@1.0::IGatekeeper default
-    user root
-    group root
-    disabled
-    seclabel u:r:recovery:s0
-
-
-on property:hwservicemanager.ready=true
-    start gatekeeper-1-0
-    start keymaster
-
-
-on property:vendor.sys.listener.registered=true
-    start gatekeeper-1-0
-    start keymaster
-
-on property:ro.crypto.state=unsupported
-    stop gatekeeper-1-0
-    stop keymaster-4-1
-on property:ro.crypto.state=unencrypted
-    stop gatekeeper-1-0
-    stop keymaster
-
-on property:twrp.all.users.decrypted=true
-    stop gatekeeper-1-0
-    stop keymaster
+# android.hardware.gatekeeper-service.mitee}.rc). A legacy generic AOSP
+# software gatekeeper (gatekeeper-1-0) was initially kept alongside it as a
+# supposedly harmless HIDL-namespace fallback; that assumption did not hold
+# up on real hardware and it has since been removed.
+#
+# The gatekeeper-1-0 service definition, its two `start` triggers and the
+# three `stop` blocks that used to follow this comment are gone, together
+# with the /vendor/bin/hw/android.hardware.gatekeeper@1.0-service binary
+# they pointed at. Describing it as a harmless fallback turned out to be
+# wrong on real hardware: it can never register, because HIDL requires a
+# matching <hal> entry in a VINTF manifest and there is none for
+# android.hardware.gatekeeper@1.0 anywhere in this tree, so every start
+# ended in
+#
+#   HidlServiceManagement: Service android.hardware.gatekeeper@1.0::IGatekeeper/default
+#   must be in VINTF manifest in order to register/get.
+#   init: Sending signal 9 to service 'gatekeeper-1-0' ... process group
+#
+# and init re-spawned it on its 5-second crash cooldown for as long as
+# TWRP stayed up - the shipped binary is not even executable (0644), so it
+# could not have worked regardless. That respawn loop is the most likely
+# cause of the few seconds of unresponsiveness right after TWRP's UI comes
+# up. The real, working AIDL gatekeeper (vendor.gatekeeper_mitee, in
+# vendor/etc/init/tee-supplicant.rc) covers this device's gatekeeper needs
+# on its own.
+#
+# The `start keymaster` / `stop keymaster` / `stop keymaster-4-1` lines
+# that were interleaved with them went too: no service by any of those
+# names is defined anywhere in this ramdisk, so init only logged errors
+# for them. Keystore talks to vendor.keymint-mitee instead.
 on boot
     start health-hal-2-1
     start vendor.vibrator-default
