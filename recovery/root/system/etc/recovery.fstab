@@ -17,15 +17,30 @@ vendor /vendor ext4 ro wait,slotselect,avb,logical,first_stage_mount
 
 product /product erofs ro wait,slotselect,avb,logical,first_stage_mount
 product /product ext4 ro wait,slotselect,avb,logical,first_stage_mount
-# mi_ext and the ~25 "overlay ... lowerdir=..." entries that followed here
-# (verbatim from stock, MIUI's product/system customization layering) were
-# removed: TWRP's fstab parser doesn't implement bind mounts declared this
-# way or the "overlay" fstype at all, so every one of them logged
-# "E:Unknown File System" on every boot for zero functional benefit -
-# these overlays only matter for full Android runtime (layering MIUI's
-# mi_ext content onto /product and /system), not for anything TWRP
-# actually does (flash/backup/wipe operate on the base partitions above,
-# which mount fine on their own).
+# The ~25 "overlay ... lowerdir=..." entries that followed here (verbatim
+# from stock, MIUI's product/system customization layering) were removed:
+# TWRP's fstab parser doesn't implement bind mounts or the "overlay"
+# fstype at all, so every one of them logged "E:Unknown File System" on
+# every boot for zero functional benefit - these overlays only matter for
+# full Android runtime (layering MIUI's mi_ext content onto /product and
+# /system), not for anything TWRP actually does.
+#
+# mi_ext ITSELF (the base partition, not the overlay lines above) is a
+# real dynamic partition on this device (stock mounts it at
+# /mnt/vendor/mi_ext then bind-mounts to /mi_ext - the bind step is
+# dropped here for the same reason as the overlays, TWRP doesn't need it,
+# just a normal mount) - it got swept out along with the broken overlay
+# entries in the same earlier cleanup, which left it completely untracked
+# by TWRP's partition manager. Confirmed live: this is what made
+# "Wipe > Format Data" fail with "E:Unable to unmap dynamic partitions" -
+# mi_ext_a's dm-linear device gets created at boot (it's still real,
+# on-device, part of the super partition - see BOARD_MAIN_DYNAMIC_PARTITIONS_
+# PARTITION_LIST's comment in BoardConfig.mk) but with no fstab entry
+# TWRP never adds it to the partition list it unmaps before/after
+# wipe/format operations, so the leftover dm node blocks the whole
+# sequence. Re-added as a plain partition entry (no bind/overlay).
+mi_ext /mi_ext erofs ro wait,slotselect,avb,logical,first_stage_mount
+mi_ext /mi_ext ext4 ro wait,slotselect,avb,logical,first_stage_mount
 
 
 
