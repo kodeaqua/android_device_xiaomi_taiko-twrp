@@ -12,7 +12,8 @@ STABLE TREE:
 
 FLASHING ROM (partition/fstab layout verified against retail images) √
 FLASHING GSI √
-TOUCH — carried over from rock, UNVERIFIED (see caveats)
+TOUCH — verified working on real hardware (nt36xxx_spi + real firmware, see below) √
+ROTATION — verified working on real hardware (TW_ROTATION := 180, see below) √
 DECRYPTION — UNVERIFIED, likely needs more work (see caveats)
 
 ## What was re-derived from the real taiko firmware
@@ -54,15 +55,40 @@ DECRYPTION — UNVERIFIED, likely needs more work (see caveats)
   Getting FBE decryption working needs the real keymint/gatekeeper HAL
   pulled from a rooted taiko's `/vendor` (its filesystem is EROFS; this
   environment had no erofs-utils/root available to unpack it).
-- **Touch firmware**: rock's `focaltech_*`/`nt36672c_*` touch firmware
-  files were removed since taiko's module list doesn't reference either
-  driver — untested whether taiko's touch panel needs any firmware blob at
-  all bundled in recovery.
+- **Touch**: resolved. taiko uses `nt36xxx_spi.ko` + `xiaomi.ko` (Novatek),
+  loaded at runtime via `TW_LOAD_VENDOR_MODULES`. The touch IC also needs its
+  firmware blob (`novatek_ts_fw_boe.bin`, pulled from a live device) uploaded
+  via `request_firmware()` ~14s after module load; since
+  `KernelModuleLoader::Load_Vendor_Modules()` unmounts `/vendor` right after
+  loading modules (before that deferred firmware request fires), the blob is
+  bundled directly into the ramdisk at `/vendor/firmware/` instead of relying
+  on the real `/vendor` partition. Confirmed working on real hardware
+  (~15-20s warm-up after boot before touch responds — this is expected, not
+  a bug).
+- **Rotation**: resolved. taiko's panel scans out 180° rotated from the
+  theme's native layout (confirmed on real hardware: without this, TWRP's
+  "Install" button visually renders bottom-right instead of top-left, and
+  tapping it opens the wrong page). Fixed with `TW_ROTATION := 180`.
 - **Brightness/thermal paths**: `TW_BRIGHTNESS_PATH`, `TW_MAX_BRIGHTNESS`,
   `TW_CUSTOM_CPU_TEMP_PATH` are carried over from rock unverified; confirm
   against real sysfs on-device.
-- **Theme/orientation**: `TW_THEME := portrait_hdpi` kept as-is; taiko's
-  11" 2000x1200 panel is untested with this theme.
+- **Theme**: `TW_THEME := portrait_hdpi` kept as-is; works correctly with
+  `TW_ROTATION := 180` on taiko's 11" 2000x1200 panel.
+- **Build quirk — stale `libminuitwrp.so` in incremental builds**: when
+  iterating on `bootable/recovery/minuitwrp/*.cpp` (e.g. for local rotation
+  debugging), `mka vendorbootimage` can silently repack the ramdisk with a
+  *stale* `libminuitwrp.so` even though the source recompiled correctly —
+  the `Install:` step that copies the freshly-linked `.so` into
+  `$OUT/recovery/root/system/lib64/` isn't reliably re-triggered by ninja on
+  incremental builds. If a source change to that file doesn't seem to take
+  effect on-device, verify by unpacking the built `vendor_boot.img`
+  (`unpack_bootimg.py`, decompress the "recovery" vendor ramdisk fragment
+  with `lz4`, extract with `cpio`) and checking
+  `system/lib64/libminuitwrp.so` directly against
+  `$OUT/target/product/taiko/system/lib64/libminuitwrp.so` (md5sum) rather
+  than trusting ninja's "no work to do". A clean forced rebuild (delete
+  `vendor_boot.img`, `ramdisk_files-timestamp`, `recovery.cpio.lz4`, and the
+  stale `.so` copies, then rebuild) resolves it.
 
 HOW TO COMPILE:
 ```
