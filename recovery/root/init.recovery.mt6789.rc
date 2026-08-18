@@ -8,6 +8,17 @@ on init
     setprop sys.usb.controller "musb-hdrc"
     setprop sys.usb.ffs.aio_compat 1
     setprop crypto.ready 1
+    # keystore2.rc (vendor/twrp, TW_INCLUDE_CRYPTO := true) invokes
+    # `/system/bin/keystore2 /tmp/misc/keystore` on `on late-init` - stock
+    # Android uses /data/misc/keystore (created by AOSP's own generic
+    # init.rc under on post-fs-data), but TWRP redirects it to /tmp since
+    # /data isn't available this early in recovery. Nothing else creates
+    # that directory, and keystore2 does NOT handle it missing gracefully -
+    # it segfaults immediately (`Fatal signal 11, fault addr 0x0`) on every
+    # single start attempt, confirmed live via `adb logcat`. `on init` runs
+    # before `on late-init`, so this guarantees the directory exists first.
+    mkdir /tmp/misc 0755 root root
+    mkdir /tmp/misc/keystore 0700 root root
 
 on fs
     install_keyring
@@ -56,10 +67,13 @@ service mtk.plpath.utils.link /system/bin/mtk_plpath_utils
 # (POCO M5) ships (taiko's kernel loads mitee.ko, Xiaomi's own in-house TEE,
 # instead of the microtrust/teei stack). The teei_daemon service and the
 # beanpod-branded hardware-backed keymint/gatekeeper HAL were therefore
-# dropped rather than carried over unverified; only the generic AOSP
-# software gatekeeper (gatekeeper-1-0) is kept below. FBE password
-# decryption in recovery is consequently NOT verified to work yet on taiko
-# and needs a matching keymint/gatekeeper HAL sourced from a real device.
+# dropped rather than carried over unverified. taiko's real mitee-based
+# KeyMint/Gatekeeper HAL is now bundled instead (see
+# vendor/etc/init/{tee-supplicant,android.hardware.security.keymint.mitee@4.0-service,
+# android.hardware.gatekeeper-service.mitee}.rc) - this legacy generic AOSP
+# software gatekeeper (gatekeeper-1-0) is kept alongside it as a fallback,
+# harmless since it registers under the older HIDL namespace rather than
+# AIDL.
 service gatekeeper-1-0 /vendor/bin/hw/android.hardware.gatekeeper@1.0-service
     interface android.hardware.gatekeeper@1.0::IGatekeeper default
     user root
