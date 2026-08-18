@@ -40,6 +40,17 @@ service vendor.gatekeeper_mitee /vendor/bin/hw/android.hardware.gatekeeper-servi
 
 on fs
     write /proc/bootprof "init tee-supplicant"
+    # /mnt/vendor/persist is declared in recovery.fstab but that only
+    # registers it with TWRP's own GUI mount manager - it's not mounted
+    # automatically at boot the way real firmware's vold/fstab.<hw> would.
+    # mitee's TA relies on real storage under here (confirmed live: without
+    # this mount, /mnt/vendor/persist/{data,fdsd} below just end up as
+    # empty stub dirs in the ramdisk's own rootfs, and the keymint-mitee
+    # service SIGABRTs with "MiteeKeymint_ipc: Check failed: status ==
+    # STATUS_OK" / TEEC oresult=TEEC_ORIGIN_TRUSTED_APP on its first TEE
+    # call that touches persistent storage). Mount it explicitly so the
+    # restorecon/mkdir below - and the TA - see the real partition.
+    mount ext4 /dev/block/by-name/persist /mnt/vendor/persist noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc
    # set SELinux security contexts on upgrade or policy update
     restorecon_recursive /mnt/vendor/persist
     chmod 0660 /dev/tee0
