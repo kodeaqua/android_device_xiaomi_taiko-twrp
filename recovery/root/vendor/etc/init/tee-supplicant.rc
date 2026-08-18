@@ -31,3 +31,19 @@ on fs
     mkdir /mnt/vendor/persist/fdsd 0755 system system
     setprop vendor.teefs_state ready
     setprop ro.hardware.gatekeeper mitee
+    # Stock firmware relies on the generic AOSP init.rc's
+    # `on late-init { class_start early_hal }` / `class_start hal` to
+    # actually launch anything merely `enable`d (which only clears the
+    # `disabled` flag - it does NOT start the service by itself) or
+    # declared without `disabled` under class `early_hal`/`hal`. TWRP's
+    # recovery init.rc doesn't replicate that generic class_start
+    # sequence (everything else in this tree is started via explicit
+    # `start <name>` tied to specific triggers instead - see
+    # gatekeeper-1-0 in init.recovery.mt6789.rc for the existing
+    # precedent), so without an explicit start here neither service ever
+    # actually launches even though `enable`/registration succeeds -
+    # confirmed live: keystore2 got as far as parsing VINTF and
+    # negotiating the shared secret, then panicked with "Binder
+    # transaction error NAME_NOT_FOUND" trying to connect to KeyMint.
+    start vendor.keymint-mitee
+    start vendor.gatekeeper_mitee
