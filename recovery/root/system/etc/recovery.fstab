@@ -6,6 +6,26 @@
 # 1 "<built-in>" 2
 # 1 "vendor/mediatek/proprietary/hardware/fstab/mt6789/fstab.in.mt6789" 2
 # 154 "vendor/mediatek/proprietary/hardware/fstab/mt6789/fstab.in.mt6789"
+# NOTE on block device names below.
+#
+# Checked against this device's real GPT, taken from
+# MT6789_Android_scatter.txt in the OS3.0.304.0.WOVMIXM fastboot package.
+# Stock's own copy of this file - and therefore this one, which is derived
+# from it - inherited a set of MTK template names that do not exist on taiko:
+#
+#   - lk, logo, dtbo, vbmeta, md1img, spmfw, pi_img and vendor_boot exist
+#     only as <name>_a / <name>_b. They now carry `slotselect`, which is what
+#     makes fs_mgr and TWRP append the active suffix.
+#   - tee1/tee2, scp1/scp2, sspm1/sspm2, dpm1/dpm2, mcupm1/mcupm2 and gz1/gz2
+#     are the numbered pairs of a non-A/B board. taiko has one slotted
+#     partition for each, so each pair collapses into a single entry.
+#   - bootloader2, init_boot, md1dsp, md1arm7, md3img, ccu, vcp, gpueb,
+#     mcf_ota, odmdtbo, mvpu_algo1/2 and apusys1/2 have no counterpart in the
+#     GPT at all and are removed.
+#
+# None of these was load-bearing - all were plain `defaults defaults` raw
+# entries, and a partition TWRP cannot find is skipped - so this is tidying
+# and correctness, not a boot fix. UNVERIFIED on hardware.
 # The `avb_keys=/avb/{q,r,s}-gsi.avbpubkey` suffix these four lines carried,
 # inherited from the MTK fstab template, is dropped. It was inert in two
 # independent ways. TWRP parses this file with its own
@@ -106,17 +126,14 @@ system_dlkm /system_dlkm ext4 ro wait,slotselect,avb,logical,first_stage_mount
 /dev/block/by-name/nvram /nvram emmc defaults defaults
 /dev/block/by-name/proinfo /proinfo emmc defaults defaults
 
-/dev/block/by-name/lk /bootloader emmc defaults defaults
-/dev/block/by-name/lk2 /bootloader2 emmc defaults defaults
+/dev/block/by-name/lk /bootloader emmc defaults defaults,slotselect
 
 
 
 
-/dev/block/by-name/bootloader2 /bootloader2 emmc defaults defaults
 /dev/block/by-name/misc /misc emmc defaults defaults
 /dev/block/by-name/para /para emmc defaults defaults
-/dev/block/by-name/vendor_boot /vendor_boot emmc defaults defaults
-/dev/block/by-name/init_boot /init_boot emmc defaults defaults
+/dev/block/by-name/vendor_boot /vendor_boot emmc defaults defaults,slotselect
 
 
 
@@ -130,45 +147,32 @@ system_dlkm /system_dlkm ext4 ro wait,slotselect,avb,logical,first_stage_mount
 /dev/block/by-name/vbmeta_vendor /vbmeta_vendor emmc defaults first_stage_mount,nofail,slotselect
 /dev/block/by-name/vbmeta_system /vbmeta_system emmc defaults first_stage_mount,nofail,slotselect,avb=vbmeta
 
-/dev/block/by-name/logo /logo emmc defaults defaults
+/dev/block/by-name/logo /logo emmc defaults defaults,slotselect
 /dev/block/by-name/expdb /expdb emmc defaults defaults
 /dev/block/by-name/seccfg /seccfg emmc defaults defaults
 
-/dev/block/by-name/tee1 /tee1 emmc defaults defaults
-/dev/block/by-name/tee2 /tee2 emmc defaults defaults
+/dev/block/by-name/tee /tee emmc defaults defaults,slotselect
 
 
-/dev/block/by-name/scp1 /scp1 emmc defaults defaults
-/dev/block/by-name/scp2 /scp2 emmc defaults defaults
+/dev/block/by-name/scp /scp emmc defaults defaults,slotselect
 
 
-/dev/block/by-name/sspm1 /sspm1 emmc defaults defaults
-/dev/block/by-name/sspm2 /sspm2 emmc defaults defaults
+/dev/block/by-name/sspm /sspm emmc defaults defaults,slotselect
 
 
-/dev/block/by-name/dpm1 /dpm1 emmc defaults defaults
-/dev/block/by-name/dpm2 /dpm2 emmc defaults defaults
+/dev/block/by-name/dpm /dpm emmc defaults defaults,slotselect
 
-/dev/block/by-name/mcupm1 /mcupm1 emmc defaults defaults
-/dev/block/by-name/mcupm2 /mcupm2 emmc defaults defaults
+/dev/block/by-name/mcupm /mcupm emmc defaults defaults,slotselect
 
 /dev/block/by-name/efuse /efuse emmc defaults defaults
 
-/dev/block/by-name/md1img /md1img emmc defaults defaults
-/dev/block/by-name/md1dsp /md1dsp emmc defaults defaults
-/dev/block/by-name/md1arm7 /md1arm7 emmc defaults defaults
-/dev/block/by-name/md3img /md3img emmc defaults defaults
+/dev/block/by-name/md1img /md1img emmc defaults defaults,slotselect
 
 
 
 
 
-/dev/block/by-name/gz1 /gz1 emmc defaults defaults
-/dev/block/by-name/gz2 /gz2 emmc defaults defaults
-/dev/block/by-name/ccu /ccu emmc defaults defaults
-/dev/block/by-name/vcp /vcp emmc defaults defaults
-/dev/block/by-name/gpueb /gpueb emmc defaults defaults
-/dev/block/by-name/mcf_ota /mcf_ota emmc defaults defaults
+/dev/block/by-name/gz /gz emmc defaults defaults,slotselect
 # The second, byte-identical `/dev/block/by-name/vendor_boot /vendor_boot`
 # entry that sat here was removed. It is already declared above; TWRP's
 # Process_Fstab pushes one TWPartition per line without checking for a
@@ -178,12 +182,8 @@ system_dlkm /system_dlkm ext4 ro wait,slotselect,avb,logical,first_stage_mount
 # which only one exists on any given board. Left alone: a partition that
 # is not present is simply skipped, and there is no way to tell from here
 # which one taiko has.)
-/dev/block/by-name/mvpu_algo1 /mvpu_algo1 emmc defaults defaults
-/dev/block/by-name/mvpu_algo2 /mvpu_algo2 emmc defaults defaults
-/dev/block/by-name/apusys1 /apusys1 emmc defaults defaults
-/dev/block/by-name/apusys2 /apusys2 emmc defaults defaults
 
-/dev/block/by-name/spmfw /spmfw emmc defaults defaults
+/dev/block/by-name/spmfw /spmfw emmc defaults defaults,slotselect
 
 
 
@@ -191,12 +191,11 @@ system_dlkm /system_dlkm ext4 ro wait,slotselect,avb,logical,first_stage_mount
 
 
 
-/dev/block/by-name/pi_img /pi_img emmc defaults defaults
+/dev/block/by-name/pi_img /pi_img emmc defaults defaults,slotselect
 /dev/block/by-name/boot_para /boot_para emmc defaults defaults
-/dev/block/by-name/odmdtbo /odmdtbo emmc defaults defaults
-/dev/block/by-name/dtbo /dtbo emmc defaults defaults
+/dev/block/by-name/dtbo /dtbo emmc defaults defaults,slotselect
 
 /dev/block/by-name/otp /otp emmc defaults defaults
 
 
-/dev/block/by-name/vbmeta /vbmeta emmc defaults defaults
+/dev/block/by-name/vbmeta /vbmeta emmc defaults defaults,slotselect

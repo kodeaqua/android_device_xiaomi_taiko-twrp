@@ -227,6 +227,43 @@ appended to the vendor cmdline, which is what an `-eng` lunch target does.
 None of this makes the image tested on hardware. It establishes that what is in
 it is what it claims to be.
 
+### Block device names checked against the real GPT
+
+The scatter file in the retail package (`MT6789_Android_scatter.txt`) lists
+taiko's actual partition table, which makes it possible to check every
+`/dev/block/by-name/` path this tree references. A lot of them were wrong —
+inherited from an MTK template, and wrong in stock's own fstab too, which is
+why nobody noticed: all of them are plain `defaults defaults` raw entries, and
+a partition TWRP cannot find is skipped silently. The cost was phantom rows in
+the GUI and backup/flash targets that could never have worked.
+
+Three classes, both in `recovery.fstab` and `twrp.flags`:
+
+- **Slotted partitions written without `slotselect`.** `lk`, `logo`, `dtbo`,
+  `vbmeta`, `md1img`, `spmfw`, `pi_img` and `vendor_boot` exist only as
+  `<name>_a` / `<name>_b`. TWRP appends the active suffix itself when the entry
+  carries `slotselect` (`partition.cpp:3208`), so the bare name alone resolved
+  to nothing. Fixed.
+- **MTK's numbered pairs.** `tee1`/`tee2`, `scp1`/`scp2`, `sspm1`/`sspm2`,
+  `dpm1`/`dpm2`, `mcupm1`/`mcupm2` and `gz1`/`gz2` belong to non-A/B boards.
+  taiko has one slotted partition for each, so each pair collapses to a single
+  `slotselect` entry.
+- **Names with no counterpart at all**: `bootloader2`, `init_boot`, `md1dsp`,
+  `md1arm7`, `md3img`, `ccu`, `vcp`, `gpueb`, `mcf_ota`, `odmdtbo`,
+  `mvpu_algo1/2`, `apusys1/2`. Removed.
+
+This also corrects a regression introduced earlier in this same release: the
+`/logo` entry in `twrp.flags` had been changed from `logo_a` to a bare `logo`
+on the reasoning that the `_a` suffix was fabricated. The suffix was real —
+`logo` is genuinely slotted — so that edit turned a slot-A-only entry into a
+dead one. It now uses `slotselect`, which is what it should have been.
+
+After the fix every `by-name` path in both files resolves against the GPT: 35
+entries in `recovery.fstab`, 45 in `twrp.flags`, no duplicate mount points.
+
+**Not verified on hardware.** `ls -l /dev/block/by-name/` on a real unit is
+the check that would settle it.
+
 ### Still open
 
 - **Decryption failure on the same reporter's device**, which is running a

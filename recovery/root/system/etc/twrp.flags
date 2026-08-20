@@ -1,4 +1,28 @@
 # Android fstab file.
+#
+# Block device names here are checked against this device's real GPT, read
+# from MT6789_Android_scatter.txt in the taiko_global_images_OS3.0.304.0.WOVMIXM
+# fastboot package. Three classes of entry were wrong before that check:
+#
+#   1. Partitions that exist only as <name>_a / <name>_b. TWRP appends the
+#      active slot suffix itself when an entry carries `slotselect`
+#      (partition.cpp:3208), so the correct form is the bare name plus that
+#      flag - lk, logo, dtbo, vbmeta, md1img. Written without it they resolved
+#      to a path that does not exist and the entry was silently inert.
+#   2. MTK's old numbered pairs - tee1/tee2, scp1/scp2, sspm1/sspm2,
+#      dpm1/dpm2, mcupm1/mcupm2, gz1/gz2. Those belong to non-A/B boards. This
+#      one has a single slotted partition for each, so the pair collapses to
+#      one `slotselect` entry.
+#   3. Names with no counterpart at all on taiko: bootloader2, md1dsp,
+#      md1arm7, md3img, ccu, vcp, gpueb, mcf_ota, odmdtbo. Removed.
+#
+# The same dead names appear in stock's own fstab, so they are inherited
+# template junk rather than anything this tree broke - harmless, since none of
+# them is needed to boot, but they produced phantom rows in the GUI and
+# backup/flash targets that could never work.
+#
+# UNVERIFIED on hardware: confirm with `ls -l /dev/block/by-name/` on a real
+# unit before trusting any single entry here.
 /metadata           ext4  /dev/block/by-name/metadata                    flags=display="Metadata";backup=1
 /data			f2fs	/dev/block/by-name/userdata			flags=fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,keydirectory=/metadata/vold/metadata_encryption
 /cache              ext4  /dev/block/by-name/rescue                    flags=display="Cache";backup=1;wipeingui;wipeduringfactoryreset
@@ -9,42 +33,27 @@
 /persistent         emmc  /dev/block/by-name/frp                         flags=display="Persistent"
 /nvram              emmc  /dev/block/by-name/nvram                       flags=display="Nvram"
 /proinfo            emmc  /dev/block/by-name/proinfo                     flags=display="Proinfo"
-/bootloader         emmc  /dev/block/by-name/lk                          flags=display="Bootloader"
-/bootloader2        emmc  /dev/block/by-name/bootloader2                 flags=display="Bootloader2"
+/bootloader         emmc  /dev/block/by-name/lk                           flags=display="Bootloader";slotselect
 /para               emmc  /dev/block/by-name/para                        flags=display="Para"
 /misc               emmc  /dev/block/by-name/misc                        flags=display="Misc"
 /boot               emmc  /dev/block/by-name/boot                        flags=display="Boot";slotselect;backup=1;flashimg=1
 /vbmeta_vendor      emmc  /dev/block/by-name/vbmeta_vendor               flags=display="VBMeta Vendor";slotselect;backup=1;flashimg=1
 /vbmeta_system      emmc  /dev/block/by-name/vbmeta_system               flags=display="VBMeta System";slotselect;backup=1;flashimg=1
-/logo               emmc  /dev/block/by-name/logo                        flags=display="Logo"
+/logo               emmc  /dev/block/by-name/logo                         flags=display="Logo";slotselect
 /expdb              emmc  /dev/block/by-name/expdb 
 /seccfg             emmc  /dev/block/by-name/seccfg  
-/tee1               emmc  /dev/block/by-name/tee1 
-/tee2               emmc  /dev/block/by-name/tee2  
-/scp1               emmc  /dev/block/by-name/scp1  
-/scp2               emmc  /dev/block/by-name/scp2 
-/sspm1              emmc  /dev/block/by-name/sspm1 
-/sspm2              emmc  /dev/block/by-name/sspm2 
-/dpm1               emmc  /dev/block/by-name/dpm1  
-/dpm2               emmc  /dev/block/by-name/dpm2  
-/mcupm1             emmc  /dev/block/by-name/mcupm1 
-/mcupm2             emmc  /dev/block/by-name/mcupm2 
-/md1img             emmc  /dev/block/by-name/md1img  
-/md1dsp             emmc  /dev/block/by-name/md1dsp 
-/md1arm7            emmc  /dev/block/by-name/md1arm7  
-/md3img             emmc  /dev/block/by-name/md3img 
-/gz1                emmc  /dev/block/by-name/gz1  
-/gz2                emmc  /dev/block/by-name/gz2  
-/ccu                emmc  /dev/block/by-name/ccu  
-/vcp                emmc  /dev/block/by-name/vcp  
-/gpueb              emmc  /dev/block/by-name/gpueb  
-/mcf_ota            emmc  /dev/block/by-name/mcf_ota  
+/tee                emmc  /dev/block/by-name/tee                          flags=display="TEE";slotselect
+/scp                emmc  /dev/block/by-name/scp                          flags=display="SCP";slotselect
+/sspm               emmc  /dev/block/by-name/sspm                         flags=display="SSPM";slotselect
+/dpm                emmc  /dev/block/by-name/dpm                          flags=display="DPM";slotselect
+/mcupm              emmc  /dev/block/by-name/mcupm                        flags=display="MCUPM";slotselect
+/md1img             emmc  /dev/block/by-name/md1img                       flags=display="MD1 Image";slotselect
+/gz                 emmc  /dev/block/by-name/gz                           flags=display="GZ";slotselect
 /vendor_boot        emmc  /dev/block/by-name/vendor_boot                     flags=display="Vendor Boot";slotselect;backup=1;flashimg=1
 /boot_para          emmc  /dev/block/by-name/boot_para  
-/odmdtbo            emmc  /dev/block/by-name/odmdtbo 
-/dtbo               emmc  /dev/block/by-name/dtbo                        flags=display="Dtbo";backup=1;flashimg=1
+/dtbo               emmc  /dev/block/by-name/dtbo                         flags=display="Dtbo";slotselect;backup=1;flashimg=1
 /otp                emmc  /dev/block/by-name/otp 
-/vbmeta             emmc  /dev/block/by-name/vbmeta                      flags=display="VBMeta";backup=1;flashimg=1
+/vbmeta             emmc  /dev/block/by-name/vbmeta                       flags=display="VBMeta";slotselect;backup=1;flashimg=1
 /system_ext         auto    /dev/block/mapper/system_ext                      flags=display="System_ext";backup=0;logical
 /system_root        auto     /dev/block/mapper/system                          flags=display="System";backup=0;logical
 /vendor             auto     /dev/block/mapper/vendor                          flags=display="Vendor";logical
