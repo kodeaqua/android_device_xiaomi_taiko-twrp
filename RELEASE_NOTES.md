@@ -183,6 +183,50 @@ the `/persist/time/` clock fixup at `partition.cpp:660` — does not apply
 here either; it keys on the mount point being exactly `/persist`, and both
 fstabs use `/mnt/vendor/persist`.
 
+### Provenance verified against the retail firmware
+
+Every bundled blob was checked against `taiko_global_images_OS3.0.304.0.WOVMIXM`
+itself — `super.img` desparsed, `vendor_a` and `vendor_dlkm_a` unpacked with
+`lpunpack` and extracted with `fsck.erofs --extract`. Until now "byte-identical
+to OS3.0.304.0.WOVMIXM" was an assertion; it is now a measurement.
+
+Identical to stock, by md5:
+
+- all four digitiser modules — `xiaomi.ko`, `xiaomi_headset_touch_notifier.ko`,
+  `nt36xxx_spi.ko`, `focaltech_tp.ko`
+- all six touch firmware blobs, BOE, Tianma and Huaxing alike
+- all thirteen mitee `.ta` trusted applications
+- `tee-supplicant`, `libteecli.so`, `vendor_tee_service_contexts`
+
+Everything else that differs, differs for a reason already recorded here, and
+the diffs confirm it rather than merely being consistent with it. The two mitee
+HAL binaries and five `android.hardware.*-ndk.so` libraries are all slightly
+larger than stock because a `DT_NEEDED` entry was added to each — adding one
+grows `dynstr`. In the keymint service that entry is
+`libcxx_verbose_abort_shim_mitee.so`, alongside four dependencies repointed from
+`libcppbor_external.so`, `libkeymaster_portable.so`, `libkeymint.so` and
+`lib_android_keymaster_keymint_utils.so` to their `_mitee` copies. Exactly the
+rename and shim work described above.
+
+Two further claims fell out of the same exercise:
+
+- `prebuilt/vendor_ramdisk.cpio.lz4` is byte-identical to the PLATFORM (type
+  0x1) fragment of the stock `vendor_boot.img` — md5 `7c7d665e...`, 27,646,885
+  bytes.
+- Desparsed `super.img` is 11,811,160,064 bytes, matching
+  `BOARD_SUPER_PARTITION_SIZE := 0x2c0000000` exactly, and its metadata lists
+  `_a`/`_b` copies of all eight logical partitions — which is what makes
+  `slotselect` on the `*_image` entries in `twrp.flags` correct.
+
+The built `vendor_boot.img` header also matches stock's field for field: header
+version 4, 4096-byte pages, kernel load `0x40000000`, ramdisk load
+`0x66f00000`, tags load `0x47c80000`, same dtb (md5 `daf7f762...`), same
+bootconfig. The only difference in the whole header is ` buildvariant=eng`
+appended to the vendor cmdline, which is what an `-eng` lunch target does.
+
+None of this makes the image tested on hardware. It establishes that what is in
+it is what it claims to be.
+
 ### Still open
 
 - **Decryption failure on the same reporter's device**, which is running a
