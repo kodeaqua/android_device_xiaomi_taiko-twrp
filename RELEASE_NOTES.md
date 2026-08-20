@@ -1,3 +1,217 @@
+# TWRP 3.7.1_12-0 for Xiaomi Redmi Pad 2 (taiko) — v1.0.1 (unreleased)
+
+Follow-up to v1.0.0, from a field report of a unit with **no touch at all**
+and an unusably laggy USB mouse. Both are fixed here. Neither fix is verified
+on the affected hardware yet — see *Still open*.
+
+### Touch on Tianma and Huaxing units
+
+v1.0.0 shipped one digitiser driver and one firmware blob, both for the BOE
+panel. taiko has three panel variants and stock loads a driver for each on
+every unit. On a Tianma or Huaxing unit v1.0.0 therefore had **no working
+digitiser at all** — not slow, absent — because the driver either was not
+present or requested a firmware file that was not in the ramdisk, with the
+real `/vendor` already unmounted by then.
+
+Added, all byte-identical to `OS3.0.304.0.WOVMIXM`:
+
+- `focaltech_tp.ko` — FocalTech FT8205P, the Huaxing panel's digitiser
+- `xiaomi_headset_touch_notifier.ko` — its one dependency not already in the
+  factory ramdisk fragment
+- `novatek_ts_fw_tm.bin` — Novatek NT36536, the Tianma panel's firmware
+- `focaltech_ts_fw_huaxing.bin`, plus the `novatek_ts_mp_*` / `focaltech_mp_*`
+  self-test blobs for completeness
+
+`init.recovery.mt6789.rc` now insmods all four modules in dependency order
+(`insmod` does not resolve `depends=` the way stock's `modprobe` does), and
+`TW_LOAD_VENDOR_MODULES` lists all four as the fallback path. See the new
+*Panel / digitiser variants* section in the README for the full mapping.
+
+### USB mouse lag
+
+An attached mouse rendered at 2 FPS. `loopTimer()` gives the input queue a
+catch-up window before drawing, and that window was a flat 500 ms whenever an
+event had just arrived. A mouse reports at 125–1000 Hz, so the condition was
+true on essentially every iteration for as long as the pointer moved, and
+`TW_FRAMERATE` was never reached on that path at all. Capped at two frame
+times, i.e. a 30 FPS floor at `TW_FRAMERATE=60`.
+
+Also fixed an inverted comparison in `MouseCursor::SetRenderPos` that flagged
+a move only when the position had *not* changed, so a freshly attached mouse
+drew no cursor until it was first moved.
+
+Both are in `bootable/recovery`, not the device tree.
+
+### Cleanup
+
+Removed four blobs nothing can reach. `android.hardware.gatekeeper@1.0-impl.so`,
+`gatekeeper.default.so` and `libSoftGatekeeper.so` were the libraries behind
+the `gatekeeper-1-0` service v1.0.0 deleted — the binary went, the libraries
+stayed. `libdrm.so` was never referenced by anything in the ramdisk, and AOSP's
+own libdrm is `recovery_available: true`, so TWRP already ships one at
+`/system/lib64`, which `LD_LIBRARY_PATH` searches first.
+
+Established by walking `DT_NEEDED` transitively from the only three things
+init starts — the mitee keymint and gatekeeper services and `tee-supplicant`.
+The same walk confirms the remaining 15 bundled objects are all reachable and
+that every external dependency they name is relinked into `/system/lib64` by
+TWRP itself (`bootable/recovery/prebuilt/Android.mk` 194-217), so the
+decryption failure below is **not** a missing library. That relink block sits
+under `TW_INCLUDE_CRYPTO_FBE`, which this device never sets directly — it is
+derived from our `TW_INCLUDE_CRYPTO := true` at
+`bootable/recovery/Android.mk:339`, and `prebuilt/Android.mk` is included
+after that assignment (`Android.mk:737`), so the block is live for taiko.
+
+### Build config
+
+Two pieces of dead configuration removed, both established by reading the
+build and mount code rather than by running anything.
+
+`device.mk` listed `libpuresoftkeymasterdevice` in both
+`TARGET_RECOVERY_DEVICE_MODULES` and
+`TW_RECOVERY_ADDITIONAL_RELINK_LIBRARY_FILES` while TWRP already relinks the
+identical path at `bootable/recovery/prebuilt/Android.mk:216`. The device
+list is folded into the same `RECOVERY_LIBRARY_SOURCE_FILES` variable at
+`prebuilt/Android.mk:332`, so the string landed in it twice and reached
+`LOCAL_REQUIRED_MODULES` twice at `prebuilt/Android.mk:432`. Only the
+duplicate is gone; `libion`, which nothing in TWRP relinks, stays in both
+lists. `BUILD_BROKEN_DUP_RULES := true` is gone with it: a full
+`mka vendorbootimage` completes clean without the hack, with no
+duplicate-rule diagnostic in the log.
+
+`recovery.fstab` carried `avb_keys=/avb/{q,r,s}-gsi.avbpubkey` on the four
+`system` / `system_ext` lines. Inert twice over: TWRP reads this file with
+its own `TWPartition::Process_Fstab_Line`, which does not know the token and
+drops it silently, and `fs_mgr` — which does parse it
+(`fs_mgr_fstab.cpp:285`) — tests `fs_mgr_flags.avb` first and only reaches
+the standalone `avb_keys` branch when that is unset (`fs_mgr.cpp:1450`,
+`1466`). These lines set it via `avb=vbmeta_system`. No `/avb` directory
+exists in either ramdisk fragment either, and Q/R/S-era GSI keys would not
+cover a current GSI.
+
+### Cross-checked against other taiko / mt6789 trees
+
+Compared against MySelly's LineageOS `taiko` device and vendor trees, the
+`xiaomi-mt6789-devs` `yunluo` tree, and muhammadrafiasyddiq's TWRP trees for
+`rock` (also mt6789) and `emerald`. Most of what came out of it was
+confirmation; three things were not.
+
+Removed `start vendor.vibrator-default` from `on boot`. Nothing anywhere in
+the image defines that service — TWRP installs no vibrator `.rc`, the factory
+PLATFORM fragment has none, and AOSP's
+`android.hardware.vibrator-service.example` is `vendor: true` without
+`recovery_available`, so neither its binary nor its `.rc` is ever present.
+This is also why `TW_SUPPORT_INPUT_AIDL_HAPTICS`, which `emerald` sets, is
+deliberately left off here: `minuitwrp`'s `vibrate()` goes through the
+blocking `AServiceManager_getService()`.
+
+Annotated the two `PRODUCT_COPY_FILES` entries that put `fstab.emmc` and
+`fstab.mt6789` into `TARGET_COPY_OUT_VENDOR_RAMDISK`. They currently reach
+nothing: `build/tasks/vendor_boot.mk` repoints
+`INTERNAL_VENDOR_RAMDISK_TARGET` at the prebuilt fragment, which carries its
+own byte-identical `first_stage_ramdisk/fstab.mt6789` and no `fstab.emmc` at
+all. Left in place rather than deleted — they become load-bearing again the
+moment that override goes, and a missing first-stage fstab is an expensive
+thing to debug.
+
+Corrected the `vendor_boot.mk` header, which still claimed `recovery/root`
+ships no `lib/modules`. It ships four, as of the touch fix above.
+
+Two checks that came back clean and are worth recording so they are not
+redone. The touch modules' dependency closure was verified directly against
+the extracted prebuilt fragment: all nine modules the four `.ko` name are
+among its 210, and `modules.load.recovery` loads them at lines 8-197, before
+this tree's `insmod`s run. And `boot-hal-1-2` / `health-hal-2-1`, which look
+like stale HIDL-era names next to the factory fragment's own
+`vendor.boot-default` / `vendor.health-default`, are TWRP's own services from
+`bootable/recovery/etc/init/`, valid under `AB_OTA_UPDATER := true`.
+
+`rock` and `emerald` also set `TW_INCLUDE_CRYPTO_FBE` and
+`TW_INCLUDE_FBE_METADATA_DECRYPT` explicitly. Both are redundant in this
+fork: the first is derived from `TW_INCLUDE_CRYPTO`
+(`bootable/recovery/Android.mk:339`) and the second is not independently
+gated at all — `-DTW_INCLUDE_FBE_METADATA_DECRYPT` is added unconditionally
+inside the same `TW_INCLUDE_CRYPTO` block, at `Android.mk:358`.
+
+### `twrp.flags` fixes
+
+This tree already had `recovery/root/system/etc/twrp.flags`, so most of what
+the reference trees offer here was already covered — `boot`, `vendor_boot`,
+both slotted vbmeta partitions and the removable-storage entries all had
+sensible flags. Five real defects surfaced by comparing it against the
+`twrp.flags` in `Shakib-BD/recovery_xiaomi_rock`, a Xiaomi mt6789 device with
+a nearly identical partition table:
+
+- The `/system_ext` entry had its `flags=` stranded on the following line, so
+  it parsed as an entry with no flags plus one junk line. Joined.
+- `/system_image`, `/vendor_image` and `/product_image` named
+  `/dev/block/mapper/<part>_a` directly. That backs up and flashes the A copy
+  regardless of which slot is active — wrong, and silently so, on slot B.
+  Now `slotselect` against the bare mapper name, matching how this same file
+  already handles `boot` and the vbmetas.
+- `system_ext`, `vendor_dlkm`, `odm_dlkm`, `system_dlkm` and `mi_ext` had no
+  image entry at all, so they could be neither backed up nor flashed.
+- `/logo` pointed at `/dev/block/by-name/logo_a`. Stock addresses `logo` by
+  bare name and does not mark it `slotselect`, so the suffix was invented.
+- `/lk1` pointed at a `by-name/lk1` that does not exist on taiko —
+  `recovery.fstab` has `lk` at `/bootloader` and `lk2` at `/bootloader2`.
+  Repointed at `/bootloader` so the display name lands on a real partition.
+
+`dtbo` and `vbmeta` also gained `backup=1` (`dtbo` gained `flashimg=1` too);
+both were reachable but not backupable.
+
+Also removed a byte-identical duplicate `/vendor_boot` line from
+`recovery.fstab` — `Process_Fstab` pushes one partition per line without
+checking for a repeated mount point, so it produced two identical GUI rows.
+The two `/bootloader2` lines were left alone: they name different block
+devices (`lk2` and `bootloader2`), only one of which exists on any board, and
+there is no way to tell from here which one taiko has.
+
+**None of this is verified on hardware.**
+
+### Corrected: what unmounts persist
+
+The `check` flag was never the reason persist gets mounted and dropped again
+early in boot. `check` reaches `Check_FS_Type`, which identifies the
+filesystem with a blkid probe and mounts nothing (`partition.cpp:2217`). The
+real cause is `Update_Size`, which mounts every partition with
+`Can_Be_Mounted` set just to measure it (`partition.cpp:3084-3087`), run
+across the whole table by the "Updating partition details..." pass. So
+dropping `check` would not have helped, and the sleep-then-mount workaround
+in `tee-supplicant.rc` stays. TWRP's one hardcoded persist special case —
+the `/persist/time/` clock fixup at `partition.cpp:660` — does not apply
+here either; it keys on the mount point being exactly `/persist`, and both
+fstabs use `/mnt/vendor/persist`.
+
+### Still open
+
+- **Decryption failure on the same reporter's device**, which is running a
+  GSI. Not reproduced and not diagnosed — needs `/tmp/recovery.log`,
+  `dmesg | grep -iE "mitee|avc"` and `logcat | grep -iE "keymint|vold"` from
+  that unit, plus its GSI build, its HyperOS base version, and whether it has
+  a lock screen credential set. Note that the credential-protected layer
+  needing the lock screen credential is expected behaviour, not this bug.
+- **Partition tools: `TW_INCLUDE_LPTOOLS` yes, `TW_ENABLE_ALL_PARTITION_TOOLS`
+  probably not.** The budget is now measured rather than guessed: the built
+  `vendor_boot.img` is 60.69MB of the 64MB partition, leaving 3.31MB.
+  `TW_ENABLE_ALL_PARTITION_TOOLS` pulls `lpdump` in as well, and `lpdump`
+  drags `libprotobuf-cpp-full.so` plus two `liblpdump*` libraries behind it —
+  plausibly more than the headroom. `TW_INCLUDE_LPTOOLS` on its own is a
+  single small binary and is the safer half. Transsion's mt6789 tree makes
+  exactly that split, setting `TW_INCLUDE_LPTOOLS := true` alongside
+  `TW_EXCLUDE_LPDUMP := true`. Still unset here; needs a build to confirm
+  either way.
+- **`TW_MAX_BRIGHTNESS` is unset, deliberately, but unverified.** Without it
+  TWRP reads `max_brightness` next to `TW_BRIGHTNESS_PATH` and falls back to
+  255 if that node is missing (`bootable/recovery/data.cpp:867-889`), which
+  is more correct than hardcoding — provided
+  `/sys/class/leds/lcd-backlight/max_brightness` exists on taiko. Worth a
+  single `cat` on the next device that boots this. `rock` and `emerald`
+  hardcode 2020/1200.
+  because it cannot be verified without a build.
+
+---
+
 # TWRP 3.7.1_12-0 for Xiaomi Redmi Pad 2 (taiko) — v1.0.0
 
 **Build date:** 2026-08-19

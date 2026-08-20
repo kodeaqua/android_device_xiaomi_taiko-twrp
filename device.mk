@@ -84,15 +84,44 @@ PRODUCT_PACKAGES += \
     mtk_plpath_utils.recovery
 
 # Additional binaries & libraries needed for recovery
+#
+# libpuresoftkeymasterdevice used to be listed here too. It is redundant:
+# TWRP already relinks that exact path itself, at
+# bootable/recovery/prebuilt/Android.mk:216, inside the TW_INCLUDE_CRYPTO_FBE
+# block - and TW_INCLUDE_CRYPTO_FBE is not something this device sets, it is
+# derived from our TW_INCLUDE_CRYPTO := true by bootable/recovery/Android.mk:339.
+# prebuilt/Android.mk is included from Android.mk:737, i.e. after that
+# assignment, so the block is live for us. Listing it again fed the identical
+# $(TARGET_OUT_SHARED_LIBRARIES)/libpuresoftkeymasterdevice.so string into
+# RECOVERY_LIBRARY_SOURCE_FILES twice (via prebuilt/Android.mk:332), which
+# then reaches LOCAL_REQUIRED_MODULES twice at prebuilt/Android.mk:432.
+# That duplicate is the prime suspect for BUILD_BROKEN_DUP_RULES in
+# BoardConfig.mk - see the note there.
+#
+# libion has to stay: nothing in TWRP relinks it, so this is the only thing
+# putting it in the ramdisk.
 TARGET_RECOVERY_DEVICE_MODULES += \
-    libion \
-    libpuresoftkeymasterdevice
+    libion
 
 TW_RECOVERY_ADDITIONAL_RELINK_LIBRARY_FILES += \
-    $(TARGET_OUT_SHARED_LIBRARIES)/libion.so \
-    $(TARGET_OUT_SHARED_LIBRARIES)/libpuresoftkeymasterdevice.so
+    $(TARGET_OUT_SHARED_LIBRARIES)/libion.so
 
 # Vendor ramdisk
+#
+# NOTE: both of these currently go nowhere, and are kept only so this stops
+# being rediscovered. TARGET_COPY_OUT_VENDOR_RAMDISK feeds the PLATFORM
+# fragment that build/make/core/Makefile generates - and build/tasks/
+# vendor_boot.mk repoints INTERNAL_VENDOR_RAMDISK_TARGET at
+# prebuilt/vendor_ramdisk.cpio.lz4, so the generated one is built and then
+# discarded. The prebuilt already carries its own
+# first_stage_ramdisk/fstab.mt6789, byte-identical to the file here, and no
+# fstab.emmc at all (taiko is UFS-only - see the mmcblk0boot0 note in
+# recovery/root/init.recovery.mt6789.rc).
+#
+# Left in place rather than deleted because they cost nothing and become
+# load-bearing again the moment that INTERNAL_VENDOR_RAMDISK_TARGET
+# override is dropped, which is exactly when a missing first-stage fstab
+# would be at its most expensive to debug.
 PRODUCT_COPY_FILES += \
      device/xiaomi/taiko/fstab.emmc:$(TARGET_COPY_OUT_VENDOR_RAMDISK)/first_stage_ramdisk/fstab.emmc \
      device/xiaomi/taiko/fstab.mt6789:$(TARGET_COPY_OUT_VENDOR_RAMDISK)/first_stage_ramdisk/fstab.mt6789

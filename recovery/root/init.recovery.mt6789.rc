@@ -27,6 +27,23 @@ on fs
 on post-fs
     # Bring the touchscreen up as early as possible.
     #
+    # taiko ships with three interchangeable panel/digitiser combinations and
+    # the retail vendor_dlkm carries a driver for each. modules.load on the
+    # real /vendor_dlkm loads all of them unconditionally, in this order, on
+    # every single unit (lines 105-109):
+    #
+    #   nt36xxx_spi.ko  -> Novatek NT36523N (BOE)    fw novatek_ts_fw_boe.bin
+    #                      Novatek NT36536  (Tianma) fw novatek_ts_fw_tm.bin
+    #   focaltech_tp.ko -> FocalTech FT8205P (Huaxing)
+    #                                        fw focaltech_ts_fw_huaxing.bin
+    #
+    # Each driver reads the active panel and bails out ("TP_COMPATIBLE IS NOT
+    # CORRECT!" / "Not found compatible node") when it is not the one bound to
+    # this unit, so loading both is exactly what stock does and is safe on any
+    # variant. Earlier builds of this tree carried only nt36xxx_spi.ko and only
+    # the BOE firmware, which is why touch was dead - not merely slow - on both
+    # Tianma and Huaxing units.
+    #
     # The Novatek driver does not talk to the panel the moment it probes: it
     # queues its firmware upload on a ~14s delayed work and the digitiser
     # reports nothing at all until that lands. Measured on real hardware,
@@ -36,24 +53,30 @@ on post-fs
     # whatever delays the load delays touch by the same amount.
     #
     # Left to TW_LOAD_VENDOR_MODULES, the load happens at ~9.3s into boot,
-    # because nt36xxx_spi.ko and xiaomi.ko live on /vendor_dlkm - a logical
-    # partition TWRP can only reach after it has mapped and mounted the
-    # super partition. Both are committed to recovery/root/lib/modules
-    # instead (777KB together; the rest of what nt36xxx_spi depends on -
-    # panel-o84-3{5,6}-*, hqsysfs, mediatek_drm_v1, xiaomi_usb_touch_notifier,
-    # and miev for xiaomi.ko - is already among the factory fragment's 210
-    # modules, loaded by init well before this point) so they can be
-    # insmod'd here at ~6.5s, moving first touch response from ~23.3s to
-    # ~20.5s. xiaomi.ko goes first: nt36xxx_spi.ko lists it in its own
-    # `depends=`.
+    # because these modules live on /vendor_dlkm - a logical partition TWRP
+    # can only reach after it has mapped and mounted the super partition. All
+    # four are committed to recovery/root/lib/modules instead (1.3MB together;
+    # the rest of what they depend on - panel-o84-3{5,6}-* and panel-o84-42-*,
+    # hqsysfs, mediatek_drm_v1, mtk_disp_notify, mtk_panel_ext,
+    # xiaomi_usb_touch_notifier, and miev for xiaomi.ko - is already among the
+    # factory fragment's 210 modules, at modules.load.recovery lines 8-197,
+    # loaded by init well before this point) so they can be insmod'd here at
+    # ~6.5s, moving first touch response from ~23.3s to ~20.5s.
+    #
+    # Order matters here in a way it does not for stock: modules.load is fed
+    # to modprobe, which resolves `depends=` itself, while insmod does not.
+    # xiaomi.ko is listed by both digitiser drivers and
+    # xiaomi_headset_touch_notifier.ko by focaltech_tp.ko, so both go first.
     #
     # TW_LOAD_VENDOR_MODULES stays enabled as a fallback - it will simply
-    # find both already loaded. The deferred firmware request still resolves
-    # against the copy bundled at /vendor/firmware in this ramdisk, since
+    # find them already loaded. The deferred firmware request still resolves
+    # against the copies bundled at /vendor/firmware in this ramdisk, since
     # TWRP unmounts the real /vendor right after its own module pass, long
     # before the ~20.5s mark.
     insmod /lib/modules/xiaomi.ko
+    insmod /lib/modules/xiaomi_headset_touch_notifier.ko
     insmod /lib/modules/nt36xxx_spi.ko
+    insmod /lib/modules/focaltech_tp.ko
 
    start boot-hal-1-2
     exec u:r:update_engine:s0 root root -- /system/bin/mtk_plpath_utils
@@ -142,7 +165,44 @@ service mtk.plpath.utils.link /system/bin/mtk_plpath_utils
 # that were interleaved with them went too: no service by any of those
 # names is defined anywhere in this ramdisk, so init only logged errors
 # for them. Keystore talks to vendor.keymint-mitee instead.
+#
+# The three libraries that service dlopen'd went with it in a later pass -
+# vendor/lib64/hw/{android.hardware.gatekeeper@1.0-impl,gatekeeper.default,
+# libSoftGatekeeper}.so - along with vendor/lib64/libdrm.so, which nothing
+# in this ramdisk has ever referenced (AOSP's own libdrm is
+# `recovery_available: true`, so TWRP ships one at /system/lib64, and that
+# path comes first in LD_LIBRARY_PATH above; the vendor copy could only
+# ever shadow-conflict). Verified by walking DT_NEEDED transitively from
+# the only three things init starts here - the keymint and gatekeeper
+# mitee services and tee-supplicant - and finding those four unreachable.
+#
+# Everything the reachable set needs from outside this ramdisk
+# (libcppbor, libcppcose_rkp, libkeymaster_messages,
+# libpuresoftkeymasterdevice, libhidlbase, libhardware, libcrypto, ...)
+# is already relinked into /system/lib64 by TWRP itself - see
+# bootable/recovery/prebuilt/Android.mk lines 194-217. That block is gated
+# on TW_INCLUDE_CRYPTO_FBE, which we never set by hand: it is derived from
+# our TW_INCLUDE_CRYPTO := true at bootable/recovery/Android.mk:339, and
+# prebuilt/Android.mk is included after that (Android.mk:737), so the gate
+# is open for taiko. The dependency closure is complete; a failure to
+# decrypt is not a missing library.
 on boot
+    # health-hal-2-1 is real: TWRP installs its .rc into the recovery
+    # fragment at /system/etc/init/android.hardware.health@2.1-service.rc
+    # (bootable/recovery/etc/Android.mk:150), unconditionally.
+    #
+    # `start vendor.vibrator-default` used to follow and was removed. No
+    # service by that name exists anywhere in what actually boots: TWRP
+    # installs no vibrator .rc (see the list in bootable/recovery/etc/init),
+    # the factory PLATFORM fragment carries none either, and AOSP's
+    # android.hardware.vibrator-service.example - the only thing that
+    # defines it, in hardware/interfaces/vibrator/aidl/default - is
+    # `vendor: true` with no recovery_available, so neither its binary nor
+    # its .rc is ever in this image. init silently ignored the line.
+    #
+    # Same reason TW_SUPPORT_INPUT_AIDL_HAPTICS is deliberately not set in
+    # BoardConfig.mk: minuitwrp's vibrate() resolves the vibrator through
+    # AServiceManager_getService(), which blocks while it waits for a
+    # service that will never register.
     start health-hal-2-1
-    start vendor.vibrator-default
     setprop sys.usb.config adb

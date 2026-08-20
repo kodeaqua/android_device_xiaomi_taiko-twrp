@@ -33,12 +33,20 @@
 #
 # The RECOVERY fragment is untouched and still comes from this tree's own
 # build on every compile, so TWRP itself is built normally - only the
-# PLATFORM half is prebuilt. Note that recovery/root deliberately ships no
-# lib/modules: the factory fragment already carries all 210 .ko files, and
-# in recovery mode both fragments are merged, so a second copy would only
-# eat into the fixed 64MB BOARD_VENDOR_BOOTIMAGE_PARTITION_SIZE budget
-# (which core/Makefile's assert-max-image-size enforces right after
-# mkbootimg runs).
+# PLATFORM half is prebuilt. In recovery mode both fragments are merged, so
+# anything recovery/root duplicates from the factory fragment only eats into
+# the fixed 64MB BOARD_VENDOR_BOOTIMAGE_PARTITION_SIZE budget (which
+# core/Makefile's assert-max-image-size enforces right after mkbootimg
+# runs). That is why recovery/root/lib/modules holds exactly four .ko and
+# not a mirror of the factory set: the factory fragment's 210 modules
+# include every dependency those four name - miev, hqsysfs,
+# mediatek_drm_v1, mtk_disp_notify, mtk_panel_ext, xiaomi_usb_touch_notifier
+# and all three panel-o84-* variants - and init loads them from
+# modules.load.recovery lines 8-197, well before the insmods in
+# init.recovery.mt6789.rc run. What the factory set does NOT contain is any
+# digitiser driver at all (verified: 210 .ko, no nt36xxx_spi, no
+# focaltech_tp, no xiaomi.ko) or any touch firmware, which is why those have
+# to be carried here.
 
 ifeq ($(TARGET_DEVICE),taiko)
 

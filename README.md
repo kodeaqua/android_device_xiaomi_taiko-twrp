@@ -48,6 +48,37 @@ NORMAL BOOT ("boot to System") — verified working on real hardware, same as
 - `BOARD_*_FILE_SYSTEM_TYPE` set to `erofs` — confirmed by reading the
   `vendor_a` partition's superblock magic straight out of `super.img`.
 
+## Panel / digitiser variants
+
+taiko ships with three interchangeable panel + touch-controller
+combinations. The panel drivers for all three are already in the factory
+vendor_boot ramdisk fragment (`modules.load.recovery` lines 82-84), but the
+digitiser drivers are not — they live on `/vendor_dlkm`, and stock
+`modules.load` (lines 105-109) loads **all** of them on **every** unit:
+
+| Panel module | Digitiser driver | TP IC | Firmware |
+|---|---|---|---|
+| `panel-o84-35-02-0b-dsc-vdo` | `nt36xxx_spi.ko` | Novatek NT36523N (BOE) | `novatek_ts_fw_boe.bin` |
+| `panel-o84-36-02-0a-dsc-vdo` | `nt36xxx_spi.ko` | Novatek NT36536 (Tianma) | `novatek_ts_fw_tm.bin` |
+| `panel-o84-42-03-0c-dsc-vdo` | `focaltech_tp.ko` | FocalTech FT8205P (Huaxing) | `focaltech_ts_fw_huaxing.bin` |
+
+Each driver reads the active panel on probe and bails out
+(`TP_COMPATIBLE IS NOT CORRECT!` / `Not found compatible node`) when it is
+not the one bound to this unit, so loading both drivers is safe on any
+variant — it is exactly what stock does.
+
+Both drivers, `xiaomi.ko` and `xiaomi_headset_touch_notifier.ko` (the two
+shared dependencies not already in the factory fragment) and all three
+firmware blobs are committed under `recovery/root/`. Getting any of this
+wrong is not a degradation, it is total loss of touch: the driver probes
+normally, defers its firmware upload, then fails the `firmware_request` with
+nothing to fall back on, because TWRP has long since unmounted the real
+`/vendor`.
+
+The MP blobs (`novatek_ts_mp_*.bin`, `focaltech_mp_fw_huaxing.ini`, ~450KB)
+are only read by the factory self-test proc entries and can be dropped if
+vendor_boot ever runs short of space.
+
 ## Caveats / follow-up work
 
 - **TEE / decryption**: rock's tree bundled a Trustonic "beanpod" TEE stack
@@ -58,13 +89,21 @@ NORMAL BOOT ("boot to System") — verified working on real hardware, same as
   format) and was correctly dropped rather than shipped unverified.
   Getting real FBE decryption needed taiko's own mitee-based KeyMint/
   Gatekeeper HAL, which was unavailable earlier for lack of erofs-utils/root
-  to unpack the EROFS `vendor` partition — since resolved (`erofs-utils`
-  built from source against this checkout's `external/erofs-utils`, and
-  `lpunpack`/`simg2img` built from `system/extras/partition_tools` and
-  `system/core/libsparse` respectively, all host tools already present in
-  this AOSP tree). The real stack was extracted from the retail vendor.img
-  (`super.img` → `simg2img` → `lpunpack -p vendor_a` → `fsck.erofs
-  --extract`) and bundled verbatim:
+  to unpack the EROFS `vendor` partition — since resolved. The real stack
+  was extracted from the retail vendor.img (`super.img` → unsparse →
+  `lpunpack -p vendor_a` → EROFS extract) and bundled verbatim:
+
+  > Note on tooling: none of `simg2img`, `lpunpack` or `fsck.erofs` is
+  > prebuilt anywhere in this checkout, and `out/` is empty on a fresh
+  > clone, so "already present in this tree" means *source* is present, not
+  > that a binary is. `external/erofs-utils` here is 1.2.1, which ships
+  > `mkfs` and `fuse` but no `fsck` — so there is no `--extract` to build.
+  > Its `lib/` does contain the whole read path (`super.c`, `namei.c`,
+  > `data.c`, `zmap.c`, `decompress.c`), which is enough to link a ~200-line
+  > extractor against, with `external/lz4` for the decompressor. `super.img`
+  > out of a Xiaomi fastboot package is an Android **sparse** image, so it
+  > needs unsparsing before any of the liblp offsets make sense.
+
   - `vendor/bin/hw/android.hardware.security.keymint@4.0-service.mitee`
   - `vendor/bin/hw/android.hardware.gatekeeper-service.mitee`
   - `vendor/bin/tee-supplicant` (talks to `/dev/tee0`, created by `mitee.ko`)
@@ -363,13 +402,22 @@ config in this tree can regenerate stock's proprietary bootstrap content
 confirmed via byte comparison that this tree's own best AOSP-13 build
 output, even with real kernel modules correctly added via
 `BOARD_VENDOR_RAMDISK_KERNEL_MODULES`, was still less than half the size
-of stock's and missing all of that). The only thing trimmed from `type
-0x2` is `lib/modules/*.ko` - safe to drop entirely since stock's `type
-0x1` already ships the identical 210 files (this tree's own copies were
-extracted from the same firmware originally) and recovery mode
-concatenates both fragments anyway, so keeping two copies was pure waste
-against the budget - so recovery/root ships no lib/modules at all now,
-which is why nothing has to be trimmed after the fact.
+of stock's and missing all of that). The main thing trimmed from `type
+0x2` is `lib/modules/*.ko`: stock's `type 0x1` already ships 210 modules
+(this tree's own copies were extracted from the same firmware originally)
+and recovery mode concatenates both fragments anyway, so a second copy was
+pure waste against the budget.
+
+That trim is no longer total. As of v1.0.1 `recovery/root/lib/modules`
+carries exactly four `.ko` - `xiaomi.ko`, `xiaomi_headset_touch_notifier.ko`,
+`nt36xxx_spi.ko`, `focaltech_tp.ko`, 1.3MB together - because none of them
+is in stock's 210. Verified by extracting the prebuilt fragment: it holds
+no digitiser driver of any kind and no touch firmware. Everything those
+four depend on *is* in there (miev, hqsysfs, mediatek_drm_v1,
+mtk_disp_notify, mtk_panel_ext, xiaomi_usb_touch_notifier and all three
+panel-o84-* variants), loaded by init from `modules.load.recovery` lines
+8-197, well before this tree's own insmods run. See the *Panel / digitiser
+variants* section.
 
 This is wired into the build rather than done by a helper script, so
 `mka vendorbootimage` alone produces a directly flashable image:

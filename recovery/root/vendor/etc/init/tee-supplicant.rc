@@ -71,11 +71,21 @@ service vendor.gatekeeper_mitee /vendor/bin/hw/android.hardware.gatekeeper-servi
 # `property:hwservicemanager.ready=true`) fires too early on this device:
 # logcat consistently showed the kernel actually mounting persist
 # ("EXT4-fs (sdc16): mounted...") followed within ~200ms by "...
-# unmounting..." attributed to TWRP's own "recovery" process, not init -
-# recovery.fstab's persist line has the `check` flag, so TWRP briefly
-# mounts persist during its own early partition scan to verify the fs,
-# then unmounts it right after (persist isn't meant to stay mounted for
-# TWRP's GUI). That scan happened consistently ~2-4s into boot on the
+# unmounting..." attributed to TWRP's own "recovery" process, not init.
+#
+# The mechanism was previously put down to recovery.fstab's `check` flag.
+# That is wrong: `check` reaches TWPartition::Check_FS_Type, which
+# identifies the filesystem with a blkid probe and never mounts anything
+# (partition.cpp:2217). What actually mounts persist is
+# TWPartition::Update_Size, which mounts every partition with
+# Can_Be_Mounted set purely to measure it (partition.cpp:3084-3087) and is
+# run across the whole table by Update_System_Details - the
+# "Updating partition details..." pass. Dropping `check` from the persist
+# line would therefore not have helped. Note also that TWRP's one
+# hardcoded persist special case, the /persist/time/ clock fixup at
+# partition.cpp:660, does not apply here: it keys on the mount point being
+# exactly /persist, and both this fstab and the stock vendor one mount the
+# partition at /mnt/vendor/persist. That scan happened consistently ~2-4s into boot on the
 # builds this was originally tuned against, earlier than every init
 # trigger tried, so a flat sleep-8-then-mount-once was enough to land
 # safely after it.

@@ -6,10 +6,21 @@
 # 1 "<built-in>" 2
 # 1 "vendor/mediatek/proprietary/hardware/fstab/mt6789/fstab.in.mt6789" 2
 # 154 "vendor/mediatek/proprietary/hardware/fstab/mt6789/fstab.in.mt6789"
-system /system erofs ro wait,slotselect,avb=vbmeta_system,logical,first_stage_mount,avb_keys=/avb/q-gsi.avbpubkey:/avb/r-gsi.avbpubkey:/avb/s-gsi.avbpubkey
-system /system ext4 ro wait,slotselect,avb=vbmeta_system,logical,first_stage_mount,avb_keys=/avb/q-gsi.avbpubkey:/avb/r-gsi.avbpubkey:/avb/s-gsi.avbpubkey
-system_ext /system_ext erofs ro wait,slotselect,avb=vbmeta_system,logical,first_stage_mount,avb_keys=/avb/q-gsi.avbpubkey:/avb/r-gsi.avbpubkey:/avb/s-gsi.avbpubkey
-system_ext /system_ext ext4 ro wait,slotselect,avb=vbmeta_system,logical,first_stage_mount,avb_keys=/avb/q-gsi.avbpubkey:/avb/r-gsi.avbpubkey:/avb/s-gsi.avbpubkey
+# The `avb_keys=/avb/{q,r,s}-gsi.avbpubkey` suffix these four lines carried,
+# inherited from the MTK fstab template, is dropped. It was inert in two
+# independent ways. TWRP parses this file with its own
+# TWPartition::Process_Fstab_Line, which does not know the token at all and
+# silently ignores it (partition.cpp never mentions avb). And even under
+# fs_mgr, which does parse it (fs_mgr_fstab.cpp:285), the mount path checks
+# `fs_mgr_flags.avb` first and only falls through to the standalone
+# avb_keys branch when it is unset (fs_mgr.cpp:1450/1466) - these lines set
+# it via `avb=vbmeta_system`, so the keys were never consulted. On top of
+# that no /avb directory exists in either ramdisk fragment, and GSI keys
+# from the Q/R/S era would not cover a current GSI anyway.
+system /system erofs ro wait,slotselect,avb=vbmeta_system,logical,first_stage_mount
+system /system ext4 ro wait,slotselect,avb=vbmeta_system,logical,first_stage_mount
+system_ext /system_ext erofs ro wait,slotselect,avb=vbmeta_system,logical,first_stage_mount
+system_ext /system_ext ext4 ro wait,slotselect,avb=vbmeta_system,logical,first_stage_mount
 
 vendor /vendor erofs ro wait,slotselect,avb,logical,first_stage_mount
 vendor /vendor ext4 ro wait,slotselect,avb,logical,first_stage_mount
@@ -158,7 +169,15 @@ system_dlkm /system_dlkm ext4 ro wait,slotselect,avb,logical,first_stage_mount
 /dev/block/by-name/vcp /vcp emmc defaults defaults
 /dev/block/by-name/gpueb /gpueb emmc defaults defaults
 /dev/block/by-name/mcf_ota /mcf_ota emmc defaults defaults
-/dev/block/by-name/vendor_boot /vendor_boot emmc defaults defaults
+# The second, byte-identical `/dev/block/by-name/vendor_boot /vendor_boot`
+# entry that sat here was removed. It is already declared above; TWRP's
+# Process_Fstab pushes one TWPartition per line without checking for a
+# duplicate mount point, so it produced two identical rows in the GUI.
+# (The two /bootloader2 lines further up are NOT duplicates in the same
+# sense - they name different block devices, lk2 and bootloader2, of
+# which only one exists on any given board. Left alone: a partition that
+# is not present is simply skipped, and there is no way to tell from here
+# which one taiko has.)
 /dev/block/by-name/mvpu_algo1 /mvpu_algo1 emmc defaults defaults
 /dev/block/by-name/mvpu_algo2 /mvpu_algo2 emmc defaults defaults
 /dev/block/by-name/apusys1 /apusys1 emmc defaults defaults

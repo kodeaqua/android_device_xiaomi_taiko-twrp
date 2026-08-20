@@ -52,8 +52,17 @@ TARGET_USES_UEFI := true
 # Platform
 TARGET_BOARD_PLATFORM := mt6789
 
-# Build Hack
-BUILD_BROKEN_DUP_RULES := true
+# Build Hack - REMOVED in v1.0.1.
+#
+# BUILD_BROKEN_DUP_RULES := true used to sit here. It was needed because
+# device.mk listed libpuresoftkeymasterdevice in both
+# TARGET_RECOVERY_DEVICE_MODULES and TW_RECOVERY_ADDITIONAL_RELINK_LIBRARY_FILES
+# while TWRP already relinks that same library itself under
+# TW_INCLUDE_CRYPTO_FBE, so the identical path reached
+# RECOVERY_LIBRARY_SOURCE_FILES twice. With that duplicate dropped (see the
+# comment in device.mk) the build completes clean without this hack -
+# verified, not assumed: a full `mka vendorbootimage` succeeded with the line
+# removed and no duplicate-rule diagnostic anywhere in the log.
 
 # Kernel
 TARGET_KERNEL_ARCH := arm64
@@ -320,17 +329,26 @@ TW_HAS_MTP := true
 # TWRP determines the real scale and boots at full brightness.
 TW_BRIGHTNESS_PATH := "/sys/class/leds/lcd-backlight/brightness"
 TW_INPUT_BLACKLIST := "hbtp_vm"
-# The touchscreen (Novatek nt36xxx_spi) and its Xiaomi touch-feature base
-# driver are NOT in the 210 modules pulled from vendor_boot's generic
-# ramdisk fragment (recovery/root/lib/modules) - real hardware boot dmesg
-# ("Modules linked in:") shows both nt36xxx_spi(O) and xiaomi(O) loaded,
-# but neither .ko ships in the ramdisk, meaning MIUI lazy-loads them from
-# /vendor/lib/modules on the real (mounted) vendor partition instead.
+# None of the touchscreen drivers are in the 210 modules pulled from
+# vendor_boot's generic ramdisk fragment - real hardware boot dmesg
+# ("Modules linked in:") shows nt36xxx_spi(O) and xiaomi(O) loaded, but no
+# such .ko ships in that fragment, meaning MIUI lazy-loads them from
+# /vendor_dlkm/lib/modules on the real (mounted) partition instead.
+#
+# taiko has three panel/digitiser variants and stock loads a driver for
+# each on every unit (vendor_dlkm modules.load lines 105-109):
+#
+#   nt36xxx_spi.ko  Novatek NT36523N (BOE) / NT36536 (Tianma)
+#   focaltech_tp.ko FocalTech FT8205P (Huaxing)
+#
+# All four .ko are committed to recovery/root/lib/modules and insmod'd from
+# init.recovery.mt6789.rc; this list is only the fallback path.
 # TW_LOAD_VENDOR_MODULES enables TWRP's own KernelModuleLoader
 # (bootable/recovery/kernel_module_loader.cpp, already gated on this exact
 # BoardConfig variable - no bootable/recovery changes needed) to mount
-# /vendor and load these two by name during Setup_Fstab.
-TW_LOAD_VENDOR_MODULES := "nt36xxx_spi.ko xiaomi.ko"
+# /vendor_dlkm and load them by name during Setup_Fstab, which is a no-op
+# once init has already loaded them.
+TW_LOAD_VENDOR_MODULES := "xiaomi.ko xiaomi_headset_touch_notifier.ko nt36xxx_spi.ko focaltech_tp.ko"
 TW_CUSTOM_CPU_TEMP_PATH := "/sys/class/thermal/thermal_zone28/temp"
 TW_FRAMERATE := 60
 TW_STATUS_ICONS_ALIGN := center
