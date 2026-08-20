@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <!-- Device tree -->
+  <remote name="kodeaqua" fetch="https://github.com/kodeaqua" revision="main" />
+  <project path="device/xiaomi/taiko" name="android_device_xiaomi_taiko-twrp"
+           remote="kodeaqua" revision="main" />
+
+  <!-- bootable/recovery, forked only to carry the USB mouse fix.
+       twrp-default.xml pins TeamWin/android_bootable_recovery at
+       android-12.1; this replaces that pin with the same tree plus the two
+       gui/ commits, which cannot live in the device tree. -->
+  <remove-project name="android_bootable_recovery" />
+  <project path="bootable/recovery" name="android_bootable_recovery"
+           remote="kodeaqua" revision="taiko-mouse-fix" />
+</manifest>

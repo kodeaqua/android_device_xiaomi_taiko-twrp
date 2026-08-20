@@ -506,6 +506,14 @@ source build/envsetup.sh
 lunch twrp_taiko-eng
 mka vendorbootimage
 ```
+
+Copy `local_manifests/taiko.xml` into `.repo/local_manifests/` before the
+first `repo sync`. Besides pointing at this device tree it repins
+`bootable/recovery` at `kodeaqua/android_bootable_recovery`, branch
+`taiko-mouse-fix` - the same TeamWin `android-12.1` tree plus the two `gui/`
+commits that make an attached USB mouse usable. Those cannot live in a device
+tree, and without them a mouse renders at 2 FPS and shows no cursor until it
+is first moved. Everything else in that fork is upstream.
 `$OUT/vendor_boot.img` is ready to flash as-is; no post-processing step.
 
 One caveat that has bitten this tree repeatedly: deleting files from
