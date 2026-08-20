@@ -367,6 +367,20 @@ TW_BACKUP_EXCLUSIONS := /data/fonts/files
 TW_INCLUDE_RESETPROP := true
 TW_INCLUDE_LIBRESETPROP :=true
 TW_INCLUDE_REPACKTOOLS := true
+# lptools only, deliberately not TW_ENABLE_ALL_PARTITION_TOOLS.
+#
+# PRODUCT_USE_DYNAMIC_PARTITIONS is already true, so the gate at
+# bootable/recovery/prebuilt/Android.mk:287-307 is open; setting
+# TW_ENABLE_ALL_PARTITION_TOOLS there would add lpdump too, and lpdump drags
+# in liblpdump.so, liblpdump_interface-V1-cpp.so and libprotobuf-cpp-full.so.
+# The built image already sits at 60.69MB of the fixed 64MB
+# BOARD_VENDOR_BOOTIMAGE_PARTITION_SIZE, so that is a real risk against
+# 3.31MB of headroom. lptools is a single small binary and is the half worth
+# having on a device whose super-partition state has already caused one bug -
+# the leftover mi_ext dm-linear node that broke Wipe > Format Data.
+# Transsion's mt6789 tree makes the same split (TW_INCLUDE_LPTOOLS with
+# TW_EXCLUDE_LPDUMP).
+TW_INCLUDE_LPTOOLS := true
 TARGET_USE_CUSTOM_LUN_FILE_PATH := /config/usb_gadget/g1/functions/mass_storage.usb0/lun.%d/file
 
 # Debug

@@ -253,9 +253,23 @@ vendor_boot ever runs short of space.
   theme's native layout (confirmed on real hardware: without this, TWRP's
   "Install" button visually renders bottom-right instead of top-left, and
   tapping it opens the wrong page). Fixed with `TW_ROTATION := 180`.
-- **Brightness/thermal paths**: `TW_BRIGHTNESS_PATH`, `TW_MAX_BRIGHTNESS`,
-  `TW_CUSTOM_CPU_TEMP_PATH` are carried over from rock unverified; confirm
-  against real sysfs on-device.
+- **Brightness**: settled by reading the device tree blob
+  (`prebuilt/dtb`, an MTK container with the FDT at offset 64). Node
+  `soc/mtk-leds/backlight` declares `max-brightness = 255` and
+  `max-hw-brightness = 2047`, and `backlight-names = lcd-backlight`. So
+  `TW_BRIGHTNESS_PATH := /sys/class/leds/lcd-backlight/brightness` is right,
+  and `TW_MAX_BRIGHTNESS` is correctly left unset: TWRP then reads
+  `max_brightness` next to that path (`data.cpp:867-889`) and gets 255, the
+  LED-class maximum. Hardcoding rock's 2020 or emerald's 1200 would have been
+  wrong - those are `max-hw-brightness`-scale numbers for different panels.
+- **Thermal**: `TW_CUSTOM_CPU_TEMP_PATH := thermal_zone28` is still
+  unverified. The DTB's `thermal-zones` node declares 23 zones (0-22:
+  `soc_max`, `cpu_little1..4`, `cpu_big1..4`, `gpu1/2`, `soc1/2`, `md`,
+  `ap_ntc`, `CPU_therm`, `display_therm`, `charge_therm`, four pmic6366
+  rails, `consys`), so zone 28 can only exist if a driver registers further
+  zones at runtime - possible, but not something the DTB can confirm. If the
+  CPU temperature reads empty on-device, `CPU_therm` (zone 15 in DT order) is
+  the first thing to try. Cosmetic either way.
 - **Theme**: `TW_THEME := portrait_hdpi` kept as-is; works correctly with
   `TW_ROTATION := 180` on taiko's 11" 2000x1200 panel.
 - **Build quirk — stale `libminuitwrp.so` in incremental builds**: when
